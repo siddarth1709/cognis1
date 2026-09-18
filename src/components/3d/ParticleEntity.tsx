@@ -14,24 +14,21 @@ interface ParticleEntityProps {
 
 const particleVertexShader = `
   uniform float uTime;
-  uniform vec3 uCursor;
-  uniform float uInteractionStrength;
   uniform float uInsideFactor;
-  uniform float uDisturbEnergy;
 
   attribute float aScale;
   attribute float aPhase;
   attribute float aDensity;
   attribute float aExpandRate;
-  attribute vec3 aBasePos;
-  attribute vec3 aTangent;
+  attribute float aGlow;
+  attribute vec3 aBaseDir;
 
-  varying float vHighlight;
+  varying float vGlow;
   varying float vDensity;
   varying float vNearFade;
   varying float vExpansion;
 
-  // Classic Perlin/Simplex 3D noise
+  // Classic Perlin/Simplex 3D noise for portal expansion drift
   vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
   vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
 
@@ -81,7 +78,6 @@ const particleVertexShader = `
     return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
   }
 
-  // Divergence-free 3D Curl Noise for fluid, non-exploding internal circulation
   vec3 curl(vec3 p, float t) {
     float e = 0.07;
     vec3 dx = vec3(e, 0.0, 0.0);
@@ -105,73 +101,41 @@ const particleVertexShader = `
   }
 
   void main() {
-    // Speed factor: energetic flow outside, slow majestic drift when zoomed in
     float speedFactor = mix(1.0, 0.22, smoothstep(0.05, 0.70, uInsideFactor));
     float tFlow = uTime * speedFactor;
 
-    vec3 pos = aBasePos;
+    // Physically simulated particle position (continuous orbital circulation & fluid interaction)
+    vec3 pos = position;
 
-    // 1. Coherent streamline orbital flow around the sphere
-    vec3 streamMotion = aTangent * (sin(tFlow * 0.35 + aPhase) * 0.06);
-    pos += streamMotion;
-
-    // 2. Tangential curl circulation: stays strictly on the spherical manifold
-    vec3 c = curl(aBasePos * 1.5, tFlow * 0.25);
-    vec3 n = normalize(aBasePos);
-    c = c - n * dot(c, n); // Project curl tangentially so sphere volume remains perfectly spherical
-    pos += c * 0.04;
-
-    // 3. Subtle breathing pulsation
-    float breathe = sin(tFlow * 0.50 + aPhase * 2.0) * 0.015;
-    pos += n * breathe;
-
-    // 4. Containment when outside the cube (r <= 0.84); expansion when inside
+    // Expansion when camera penetrates inside the universe
     float expansion = smoothstep(0.08, 0.65, uInsideFactor);
-    if (expansion < 0.001) {
-      float currentR = length(pos);
-      if (currentR > 0.84) {
-        pos = normalize(pos) * 0.83;
-      }
-    } else {
-      pos += normalize(aBasePos) * (aExpandRate * expansion * 3.6);
-      pos += curl(aBasePos * 0.8, tFlow * 0.15) * (expansion * 0.65);
+    if (expansion > 0.001) {
+      pos += normalize(aBaseDir) * (aExpandRate * expansion * 3.6);
+      pos += curl(aBaseDir * 0.8, tFlow * 0.15) * (expansion * 0.65);
     }
 
-    // 5. Cursor subtle disturbance:
-    // When hovered, particles are slightly disturbed (soft flutter / swirl).
-    // NO radial hollow bubble/void push.
-    // Soon, uDisturbEnergy damps back to 0, returning particles to their regular formation.
-    vec3 toCursor = pos - uCursor;
-    float dist = length(toCursor);
-    float influenceRadius = 0.65;
-    float spatialInfluence = smoothstep(influenceRadius, 0.0, dist);
-    float totalDisturbance = spatialInfluence * uDisturbEnergy * uInteractionStrength;
-
-    // Organic disturbance without radial cavity
-    vec3 flutter = cross(normalize(toCursor + 0.001), normalize(aBasePos + 0.001));
-    vec3 wave = aTangent * sin(uTime * 6.0 + aPhase * 3.0);
-    pos += (flutter * 0.042 + wave * 0.032) * totalDisturbance;
-
-    vHighlight = totalDisturbance;
+    vGlow = aGlow;
     vExpansion = expansion;
+    vDensity = aDensity;
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Particle sizing: STRICTLY PRESERVED (DO NOT CHANGE PARTICLE SIZE ON HOVER)
-    float baseSize = aScale * mix(14.0, 9.5, expansion);
+    // Sizing: Refined bead size at rest, swelling noticeably during interaction glow
+    float baseSize = aScale * mix(22.0, 15.0, expansion);
+    baseSize *= (1.0 + aGlow * 0.50); // Expands up to 50% when glowing under cursor
     float rawSize = baseSize * (1.0 / max(-mvPosition.z, 0.12));
-    gl_PointSize = clamp(rawSize, 1.5, mix(28.0, 18.0, expansion));
+    gl_PointSize = clamp(rawSize, 2.5, mix(36.0, 22.0, expansion));
 
-    vDensity = aDensity;
     vNearFade = smoothstep(0.20, 0.65, -mvPosition.z);
   }
 `;
 
 const particleFragmentShader = `
+  uniform float uTime;
   uniform float uInsideFactor;
 
-  varying float vHighlight;
+  varying float vGlow;
   varying float vDensity;
   varying float vNearFade;
   varying float vExpansion;
@@ -182,24 +146,32 @@ const particleFragmentShader = `
     float dist = length(coord);
     if (dist > 0.5) discard;
 
-    float core = smoothstep(0.5, 0.14, dist);
-    float glow = smoothstep(0.5, 0.0, dist);
-    float shapeAlpha = mix(glow * 0.70, 1.0, core);
+    float core = smoothstep(0.5, 0.12, dist);
+    float halo = smoothstep(0.5, 0.0, dist);
+    float shapeAlpha = mix(halo * 0.75, 1.0, core);
 
-    // Color: Luminous bone particles (#EDE9DF) with warm golden accents (#D9A441 & #E05A2B)
-    vec3 neutralBone = vec3(0.96, 0.94, 0.90);
-    vec3 warmGold = vec3(0.92, 0.72, 0.35);    // #E3B65A
-    vec3 heroOrange = vec3(0.88, 0.40, 0.20);  // #E05A2B
+    // Color: Softer, muted particles before interaction
+    // Duller tone so cursor disturbance creates a striking contrast when lighting up
+    vec3 mutedBone = vec3(0.68, 0.65, 0.60);
+    vec3 mutedGold = vec3(0.72, 0.54, 0.28);
+    vec3 mutedOrange = vec3(0.68, 0.32, 0.15);
 
-    // Density and phase modulate color so filaments glow in gold/orange ribbons
-    vec3 baseColor = mix(neutralBone, warmGold, vDensity * 0.70);
-    baseColor = mix(baseColor, heroOrange, smoothstep(0.68, 1.0, vDensity) * 0.45);
+    // Subtle gentle shimmer on resting particles
+    float shimmer = 0.04 * sin(uTime * 2.2 + vDensity * 6.28);
+    vec3 baseColor = mix(mutedBone, mutedGold, clamp(vDensity * 0.70 + shimmer, 0.0, 1.0));
+    baseColor = mix(baseColor, mutedOrange, smoothstep(0.70, 1.0, vDensity) * 0.40);
 
-    // Gold appears as an energetic localized shimmer under cursor perturbation
-    vec3 finalColor = mix(baseColor, warmGold, vHighlight * 0.5);
+    // Individual light glow on interaction:
+    // Ignites from dull resting tone into an incandescent warm-white / radiant amber aura
+    vec3 radiantGlowColor = vec3(1.0, 0.96, 0.86);
+    vec3 radiantGold = vec3(1.0, 0.78, 0.38);
+    vec3 glowAura = mix(radiantGold, radiantGlowColor, vGlow);
+    vec3 finalColor = mix(baseColor, glowAura, vGlow * 0.95);
 
-    // Controlled alpha: clean, distinct points without an overblown glare
-    float finalAlpha = shapeAlpha * (0.42 + vDensity * 0.35 + vHighlight * 0.15) * vNearFade;
+    // Alpha: Muted resting opacity (soft & understated), surging into bright radiance during interaction
+    float restingAlpha = shapeAlpha * (0.24 + vDensity * 0.18);
+    float glowAlpha = (shapeAlpha * 0.50 + 0.50 * halo) * vGlow;
+    float finalAlpha = (restingAlpha + glowAlpha) * vNearFade;
 
     gl_FragColor = vec4(finalColor, finalAlpha);
   }
@@ -213,17 +185,38 @@ export function ParticleEntity({
 }: ParticleEntityProps) {
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const posAttrRef = useRef<THREE.BufferAttribute>(null);
+  const glowAttrRef = useRef<THREE.BufferAttribute>(null);
 
-  // Deterministic procedural generation: Full 3D spherical harmonic distribution
-  const [positions, basePositions, tangents, scales, phases, densities, expandRates] = useMemo(() => {
+  // Deterministic procedural generation: Multi-axis planetary orbital streamlines
+  const {
+    positions,
+    baseDirs,
+    rBases,
+    speeds,
+    phases,
+    axisIndices,
+    scales,
+    densities,
+    expandRates,
+    glows,
+    disps,
+    dispVels,
+    normalizedAxes,
+  } = useMemo(() => {
     const totalCount = count;
     const pos = new Float32Array(totalCount * 3);
-    const base = new Float32Array(totalCount * 3);
-    const tang = new Float32Array(totalCount * 3);
-    const sc = new Float32Array(totalCount);
+    const bDirs = new Float32Array(totalCount * 3);
+    const rB = new Float32Array(totalCount);
+    const spds = new Float32Array(totalCount);
     const ph = new Float32Array(totalCount);
+    const aIndices = new Uint8Array(totalCount);
+    const sc = new Float32Array(totalCount);
     const dens = new Float32Array(totalCount);
     const expRate = new Float32Array(totalCount);
+    const glw = new Float32Array(totalCount);
+    const dsp = new Float32Array(totalCount * 3);
+    const dspV = new Float32Array(totalCount * 3);
 
     let seed = 42;
     function seededRandom() {
@@ -231,146 +224,317 @@ export function ParticleEntity({
       return seed / 233280;
     }
 
-    // Swirling orbital axes for planetary streamline ribbons around the full sphere
-    const streamAxes = [
-      new THREE.Vector3(0.0, 1.0, 0.0).normalize(),
-      new THREE.Vector3(0.7, 0.6, -0.3).normalize(),
-      new THREE.Vector3(-0.5, 0.8, 0.4).normalize(),
-      new THREE.Vector3(0.3, -0.8, 0.5).normalize(),
+    // 4 Swirling orbital axes for intertwined planetary streamline ribbons
+    const rawAxes = [
+      [0.0, 1.0, 0.0],
+      [0.707, 0.60, -0.36],
+      [-0.55, 0.78, 0.30],
+      [0.32, -0.75, 0.58],
     ];
+    const nAxes: [number, number, number][] = rawAxes.map((a) => {
+      const len = Math.hypot(a[0], a[1], a[2]);
+      return [a[0] / len, a[1] / len, a[2] / len];
+    });
 
     for (let i = 0; i < totalCount; i++) {
-      // FULL 3D SPHERE COORDINATES: covers from North pole (0) to South pole (PI), 360 around
-      const phi = Math.acos(2.0 * seededRandom() - 1.0); // Polar angle [0, PI]
-      const theta = seededRandom() * Math.PI * 2.0;       // Azimuthal angle [0, 2*PI]
+      const phi = Math.acos(2.0 * seededRandom() - 1.0);
+      const theta = seededRandom() * Math.PI * 2.0;
 
-      // Unit sphere direction
-      const dir = new THREE.Vector3(
-        Math.sin(phi) * Math.cos(theta),
-        Math.cos(phi),
-        Math.sin(phi) * Math.sin(theta)
-      );
+      const dirX = Math.sin(phi) * Math.cos(theta);
+      const dirY = Math.cos(phi);
+      const dirZ = Math.sin(phi) * Math.sin(theta);
 
-      // Multi-frequency harmonic ribbon modulation creates the organic filament bands
+      bDirs[i * 3 + 0] = dirX;
+      bDirs[i * 3 + 1] = dirY;
+      bDirs[i * 3 + 2] = dirZ;
+
       const harmonicRibbon =
-        Math.sin(theta * 3.0 + phi * 4.0) * 0.04 +
-        Math.cos(theta * 5.0 - phi * 2.5) * 0.03;
+        Math.sin(theta * 3.0 + phi * 4.0) * 0.035 +
+        Math.cos(theta * 5.0 - phi * 2.5) * 0.025;
 
-      // 75% of particles in the outer spherical shell filaments, 25% in the dense glowing core
       const isOuter = seededRandom() < 0.75;
       let r = isOuter
-        ? radius * (0.80 + 0.20 * seededRandom() + harmonicRibbon)
-        : radius * (0.25 + 0.52 * Math.pow(seededRandom(), 0.8));
+        ? radius * (0.82 + 0.18 * seededRandom() + harmonicRibbon)
+        : radius * (0.28 + 0.50 * Math.pow(seededRandom(), 0.8));
 
       r = Math.min(r, radius);
+      rB[i] = r;
 
-      const pLocal = dir.clone().multiplyScalar(r);
+      // Initial resting position
+      pos[i * 3 + 0] = dirX * r;
+      pos[i * 3 + 1] = dirY * r;
+      pos[i * 3 + 2] = dirZ * r;
 
-      pos[i * 3 + 0] = pLocal.x;
-      pos[i * 3 + 1] = pLocal.y;
-      pos[i * 3 + 2] = pLocal.z;
+      // Active continuous circulation speeds (smooth, lively planetary revolution)
+      spds[i] = 0.38 + 0.32 * seededRandom();
+      ph[i] = theta + phi * 1.5;
+      aIndices[i] = i % nAxes.length;
 
-      base[i * 3 + 0] = pLocal.x;
-      base[i * 3 + 1] = pLocal.y;
-      base[i * 3 + 2] = pLocal.z;
-
-      // Select orbital stream axis
-      const streamAxis = streamAxes[i % streamAxes.length];
-      const tOrbit = new THREE.Vector3().crossVectors(streamAxis, dir).normalize();
-
-      tang[i * 3 + 0] = tOrbit.x;
-      tang[i * 3 + 1] = tOrbit.y;
-      tang[i * 3 + 2] = tOrbit.z;
-
-      // Delicate particle scale (fine-grained, high-density look without chunky dots)
-      sc[i] = seededRandom() < 0.88 ? 0.55 + seededRandom() * 0.35 : 1.05;
-      ph[i] = theta + phi;
+      // Particle scale: slightly increased base distribution matching reference (Pic 2)
+      sc[i] = seededRandom() < 0.88 ? 0.80 + seededRandom() * 0.40 : 1.30;
       dens[i] = 0.5 + 0.5 * Math.sin(theta * 3.0 + phi * 2.0);
       expRate[i] = 0.5 + 2.8 * seededRandom();
+      glw[i] = 0.0;
     }
 
-    return [pos, base, tang, sc, ph, dens, expRate];
+    return {
+      positions: pos,
+      baseDirs: bDirs,
+      rBases: rB,
+      speeds: spds,
+      phases: ph,
+      axisIndices: aIndices,
+      scales: sc,
+      densities: dens,
+      expandRates: expRate,
+      glows: glw,
+      disps: dsp,
+      dispVels: dspV,
+      normalizedAxes: nAxes,
+    };
   }, [count, radius]);
 
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
-      uCursor: { value: new THREE.Vector3(999, 999, 999) },
-      uInteractionStrength: { value: 1.0 },
       uInsideFactor: { value: 0 },
-      uDisturbEnergy: { value: 0 },
     }),
     []
   );
 
-  const prevCursorRef = useRef(new THREE.Vector3(999, 999, 999));
-  const disturbEnergyRef = useRef(0);
-  const wasNearRef = useRef(false);
+  const prevCurRef = useRef(new THREE.Vector3(999, 999, 999));
+  const smoothedCurRef = useRef(new THREE.Vector3(999, 999, 999));
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
+    const dt = Math.min(delta, 0.05); // Cap delta for rock-solid numerical stability
+    const time = state.clock.getElapsedTime();
+
     if (materialRef.current) {
-      materialRef.current.uniforms.uTime.value += delta;
+      materialRef.current.uniforms.uTime.value = time;
       materialRef.current.uniforms.uInsideFactor.value = THREE.MathUtils.damp(
         materialRef.current.uniforms.uInsideFactor.value,
         insideFactor,
         5.0,
-        delta
+        dt
       );
+    }
 
-      // Smooth damped local 3D cursor position
-      if (cursorLocal) {
-        const cur = materialRef.current.uniforms.uCursor.value;
-        cur.x += (cursorLocal.x - cur.x) * 0.25;
-        cur.y += (cursorLocal.y - cur.y) * 0.25;
-        cur.z += (cursorLocal.z - cur.z) * 0.25;
+    const isOutside = insideFactor < 0.2;
 
-        // Check distance to particle cloud center [0, 0, 0]
-        const distToCenter = Math.hypot(cursorLocal.x, cursorLocal.y, cursorLocal.z);
-        const isNear = distToCenter < 1.15;
+    if (cursorLocal) {
+      if (prevCurRef.current.x > 900) {
+        prevCurRef.current.copy(cursorLocal);
+        smoothedCurRef.current.copy(cursorLocal);
+      }
+      smoothedCurRef.current.lerp(cursorLocal, 0.35);
+    }
 
-        if (prevCursorRef.current.x < 900) {
-          const dx = cursorLocal.x - prevCursorRef.current.x;
-          const dy = cursorLocal.y - prevCursorRef.current.y;
-          const dz = cursorLocal.z - prevCursorRef.current.z;
-          const moveDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const curX = smoothedCurRef.current.x;
+    const curY = smoothedCurRef.current.y;
+    const curR2 = curX * curX + curY * curY;
+    const curDist = Math.sqrt(curR2);
 
-          // Moving onto or through the particles stimulates disturbance
-          if (isNear) {
-            if (!wasNearRef.current) {
-              // Mouse just entered the particle cloud: trigger gentle initial disturbance
-              disturbEnergyRef.current = Math.min(1.0, disturbEnergyRef.current + 0.60);
-            } else if (moveDist > 0.002) {
-              // Cursor moving while hovering: disturb proportionally to movement speed
-              disturbEnergyRef.current = Math.min(1.0, disturbEnergyRef.current + moveDist * 4.2);
-            }
-          }
+    // Front hemisphere contact depth on visible sphere
+    const curZ = Math.sqrt(Math.max(0, radius * radius - curR2));
+
+    // Cursor velocity calculation
+    let velX = 0;
+    let velY = 0;
+    let velZ = 0;
+    let speed = 0;
+
+    if (prevCurRef.current.x < 900 && dt > 0.0001) {
+      velX = (curX - prevCurRef.current.x) / dt;
+      velY = (curY - prevCurRef.current.y) / dt;
+      velZ = (curZ - prevCurRef.current.z) / dt;
+      speed = Math.sqrt(velX * velX + velY * velY + velZ * velZ);
+      if (speed > 18.0) {
+        const factor = 18.0 / speed;
+        velX *= factor;
+        velY *= factor;
+        velZ *= factor;
+        speed = 18.0;
+      }
+    }
+    prevCurRef.current.set(curX, curY, curZ);
+
+    const isCursorNear = isOutside && curDist < 1.25 && prevCurRef.current.x < 900;
+    const R_inf = 0.58;
+    const damping = Math.pow(0.87, dt * 60);
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+
+      // 1. ACTIVE CONTINUOUS ORBITAL CIRCULATION:
+      // Rotate baseDir around its designated streamAxis using Rodrigues' rotation formula
+      const axis = normalizedAxes[axisIndices[i]];
+      const ux = axis[0];
+      const uy = axis[1];
+      const uz = axis[2];
+
+      const vx = baseDirs[i3];
+      const vy = baseDirs[i3 + 1];
+      const vz = baseDirs[i3 + 2];
+
+      const angle = time * speeds[i] + phases[i];
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+
+      // Cross product u x v
+      const cx = uy * vz - uz * vy;
+      const cy = uz * vx - ux * vz;
+      const cz = ux * vy - uy * vx;
+
+      // Dot product u . v
+      const dot = ux * vx + uy * vy + uz * vz;
+      const factor = dot * (1.0 - cosA);
+
+      // Rotated unit direction
+      const rx = vx * cosA + cx * sinA + ux * factor;
+      const ry = vy * cosA + cy * sinA + uy * factor;
+      const rz = vz * cosA + cz * sinA + uz * factor;
+
+      // Living radial breathing & surface harmonic ripples
+      const ripple =
+        Math.sin(angle * 2.8 + time * 1.6) * 0.022 +
+        Math.sin(time * 0.8 + phases[i] * 2.0) * 0.012;
+      const r = rBases[i] + ripple;
+
+      const basePx = rx * r;
+      const basePy = ry * r;
+      const basePz = rz * r;
+
+      // Particle's actual position = living base formation + cursor disturbance displacement
+      let px = basePx + disps[i3];
+      let py = basePy + disps[i3 + 1];
+      let pz = basePz + disps[i3 + 2];
+
+      // 2. CURSOR INTERACTION FORCES:
+      if (isCursorNear) {
+        const pdx = px - curX;
+        const pdy = py - curY;
+        const pdz = pz - curZ;
+        const d2 = pdx * pdx + pdy * pdy + pdz * pdz * 0.45;
+
+        if (d2 < R_inf * R_inf) {
+          const d = Math.sqrt(d2);
+          let f = 1.0 - d / R_inf;
+          f = f * f * (3.0 - 2.0 * f); // Smoothstep curve
+
+          // Repulsion away from cursor
+          const repel = 3.4 * f;
+          const invD = 1.0 / (d + 0.03);
+          let fx = pdx * invD * repel;
+          let fy = pdy * invD * repel;
+          let fz = pdz * invD * repel;
+
+          // Drag / wake along cursor motion
+          const wake = Math.min(speed, 6.0) * 0.40 * f;
+          fx += velX * wake * 0.12;
+          fy += velY * wake * 0.12;
+          fz += velZ * wake * 0.12;
+
+          // Fluid vortex swirl around cursor axis
+          fx += -pdy * 3.4 * f;
+          fy += pdx * 3.4 * f;
+          fz += (pdx + pdy) * 1.8 * f;
+
+          dispVels[i3] += fx * dt * 4.5;
+          dispVels[i3 + 1] += fy * dt * 4.5;
+          dispVels[i3 + 2] += fz * dt * 4.5;
+
+          // Individual particle light glow excitation
+          const glowImpulse = f * (0.75 + Math.min(speed, 5.0) * 0.15);
+          glows[i] = Math.min(1.0, glows[i] + glowImpulse * dt * 14.0);
         }
-        wasNearRef.current = isNear;
-        prevCursorRef.current.copy(cursorLocal);
       }
 
-      // Smooth decay: disturbance soon returns to 0 (particles return to regular formation)
-      disturbEnergyRef.current = THREE.MathUtils.damp(
-        disturbEnergyRef.current,
-        0.0,
-        3.2,
-        delta
-      );
+      // 3. RESTORATIVE SPRING-DAMPER ON DISPLACEMENT:
+      // Smoothly returns displacement to 0 so particles seamlessly rejoin the living orbital flow
+      dispVels[i3] -= disps[i3] * 4.8 * dt;
+      dispVels[i3 + 1] -= disps[i3 + 1] * 4.8 * dt;
+      dispVels[i3 + 2] -= disps[i3 + 2] * 4.8 * dt;
 
-      materialRef.current.uniforms.uDisturbEnergy.value = disturbEnergyRef.current;
+      dispVels[i3] *= damping;
+      dispVels[i3 + 1] *= damping;
+      dispVels[i3 + 2] *= damping;
+
+      disps[i3] += dispVels[i3] * dt;
+      disps[i3 + 1] += dispVels[i3 + 1] * dt;
+      disps[i3 + 2] += dispVels[i3 + 2] * dt;
+
+      px = basePx + disps[i3];
+      py = basePy + disps[i3 + 1];
+      pz = basePz + disps[i3 + 2];
+
+      // 4. STRICT CONTAINER BOUNDARY CONSTRAINT:
+      // Constrain within r <= 0.94 so particles never breach the wireframe cube walls
+      const currentR = Math.sqrt(px * px + py * py + pz * pz);
+      if (currentR > 0.86) {
+        // Soft boundary cushion
+        const push = (currentR - 0.86) * 14.0 * dt;
+        px -= (px / currentR) * push;
+        py -= (py / currentR) * push;
+        pz -= (pz / currentR) * push;
+      }
+      const rAfter = Math.sqrt(px * px + py * py + pz * pz);
+      if (rAfter > 0.94) {
+        const s = 0.94 / rAfter;
+        px *= s;
+        py *= s;
+        pz *= s;
+        disps[i3] = px - basePx;
+        disps[i3 + 1] = py - basePy;
+        disps[i3 + 2] = pz - basePz;
+        // Damp outward velocity
+        const vRadial =
+          (dispVels[i3] * px + dispVels[i3 + 1] * py + dispVels[i3 + 2] * pz) /
+          (0.94 * 0.94);
+        if (vRadial > 0) {
+          dispVels[i3] -= vRadial * px * 1.4;
+          dispVels[i3 + 1] -= vRadial * py * 1.4;
+          dispVels[i3 + 2] -= vRadial * pz * 1.4;
+        }
+      }
+
+      // Individual glow decays smoothly back to 0
+      if (glows[i] > 0.001) {
+        glows[i] = Math.max(0.0, glows[i] - dt * 1.15);
+      } else {
+        glows[i] = 0.0;
+      }
+
+      positions[i3] = px;
+      positions[i3 + 1] = py;
+      positions[i3 + 2] = pz;
+    }
+
+    if (posAttrRef.current) {
+      posAttrRef.current.needsUpdate = true;
+    }
+    if (glowAttrRef.current) {
+      glowAttrRef.current.needsUpdate = true;
     }
   });
 
   return (
     <points ref={pointsRef}>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-        <bufferAttribute attach="attributes-aBasePos" args={[basePositions, 3]} />
-        <bufferAttribute attach="attributes-aTangent" args={[tangents, 3]} />
+        <bufferAttribute
+          ref={posAttrRef}
+          attach="attributes-position"
+          args={[positions, 3]}
+        />
+        <bufferAttribute attach="attributes-aBaseDir" args={[baseDirs, 3]} />
         <bufferAttribute attach="attributes-aScale" args={[scales, 1]} />
         <bufferAttribute attach="attributes-aPhase" args={[phases, 1]} />
         <bufferAttribute attach="attributes-aDensity" args={[densities, 1]} />
         <bufferAttribute attach="attributes-aExpandRate" args={[expandRates, 1]} />
+        <bufferAttribute
+          ref={glowAttrRef}
+          attach="attributes-aGlow"
+          args={[glows, 1]}
+        />
       </bufferGeometry>
       <shaderMaterial
         ref={materialRef}
