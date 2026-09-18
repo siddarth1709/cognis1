@@ -146,14 +146,18 @@ function SceneDirector({
 
     // Unproject cursor to local coordinate frame of particle entity
     if (particleGroupRef.current) {
-      const ndc = new THREE.Vector2(cursorPos.x, cursorPos.y);
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(ndc, camera);
-      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-      const hitWorld = new THREE.Vector3();
-      raycaster.ray.intersectPlane(plane, hitWorld);
-      const local = particleGroupRef.current.worldToLocal(hitWorld);
-      cursorLocalRef.current.copy(local);
+      if (cursorPos.x > 900) {
+        cursorLocalRef.current.set(999, 999, 999);
+      } else {
+        const ndc = new THREE.Vector2(cursorPos.x, cursorPos.y);
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(ndc, camera);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const hitWorld = new THREE.Vector3();
+        raycaster.ray.intersectPlane(plane, hitWorld);
+        const local = particleGroupRef.current.worldToLocal(hitWorld);
+        cursorLocalRef.current.copy(local);
+      }
     }
   });
 
@@ -229,11 +233,17 @@ export function CognisCanvas({ scrollProgress }: CognisCanvasProps) {
       setCursorPos({ x, y });
     };
 
+    const handlePointerLeave = () => {
+      setCursorPos({ x: 999, y: 999 });
+    };
+
     window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    window.addEventListener("pointerleave", handlePointerLeave);
 
     return () => {
       window.removeEventListener("resize", checkViewport);
       window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerleave", handlePointerLeave);
     };
   }, []);
 
