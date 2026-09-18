@@ -37,9 +37,14 @@ export async function POST(req: Request) {
       },
       { status: 201 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error?.message || "Failed to initialize workspace." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to initialize workspace.",
+      },
       { status: 400 }
     );
   }
