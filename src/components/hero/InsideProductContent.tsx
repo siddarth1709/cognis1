@@ -384,7 +384,7 @@ export function InsideProductContent({ progress }: InsideProductContentProps) {
                   active ? "bg-[#D8663D]" : "bg-[#282823]"
                 }`}
               />
-              <span>{s.step} // {s.tag.split(" ")[0]}</span>
+              <span>{s.step} {"//"} {s.tag.split(" ")[0]}</span>
             </div>
           );
         })}

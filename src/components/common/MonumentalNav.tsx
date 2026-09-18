@@ -41,21 +41,21 @@ export function MonumentalNav() {
 
         {/* Center: Monumental Architectural Topics (hidden on mobile/tablet) */}
         <nav className="hidden lg:flex items-center gap-10 text-[11px] font-mono-tech tracking-[0.14em] text-[#8C887B]">
-          <a href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
+          <Link href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
             01 // THE DRIFT GAP
-          </a>
-          <a href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
+          </Link>
+          <Link href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
             02 // FORENSICS
-          </a>
-          <a href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
+          </Link>
+          <Link href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
             03 // CONSEQUENCE
-          </a>
-          <a href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
+          </Link>
+          <Link href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
             04 // HEALING
-          </a>
-          <a href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
+          </Link>
+          <Link href="/#hero-experience" className="hover:text-[#F2EFE9] transition-colors">
             05 // REFUSAL
-          </a>
+          </Link>
         </nav>
 
         {/* Right: Real Auth Action Buttons */}
