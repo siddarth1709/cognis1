@@ -1,40 +1,39 @@
+from __future__ import annotations
+
+import hashlib
 from pathlib import Path
 from typing import Optional
 
 from .models import Provenance
 
-def get_line_range(
-    file_path:str,
-    start_line: int,
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def sha256_text(text: str) -> str:
+    return sha256_bytes(text.encode("utf-8", errors="replace"))
+
+
+def file_provenance(
+    repository: Optional[str],
+    commit: Optional[str],
+    path: Path,
+    source_type: str,
+    extractor: str,
+    start_line: Optional[int] = None,
     end_line: Optional[int] = None,
-) -> str:
-    end_line = end_line or start_line
-
-    path = Path(file_path)
-
-    if not path.exists():
-        return ""
-
-    lines = path.read_text(
-        encoding = "utf-8",
-        errors = "replace",
-    ).splitlines()
-
-    selected = lines[start_line - 1:end_line]
-
-    return "\n".join(selected)
-
-def create_provenance(
-    file_path: str,
-    line_start: Optional[int] = None,
-    line_end: Optional[int] = None,
-    symbol = Optional[str] = None,
-    commit = Optional[str] = None,
+    confidence: float = 1.0,
+    metadata: Optional[dict] = None,
 ) -> Provenance:
     return Provenance(
-        file = str(file_path),
-        line_start = line_start,
-        line_end = line_end,
-        symbol = symbol,
-        commit = commit,
+        repository=repository,
+        commit=commit,
+        file=path.as_posix(),
+        start_line=start_line,
+        end_line=end_line,
+        source_type=source_type,
+        extractor=extractor,
+        confidence=max(0.0, min(1.0, confidence)),
+        metadata=metadata or {},
     )

@@ -1,75 +1,76 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-@dataclass
+
+@dataclass(frozen=True)
 class Provenance:
-    file: str
-    line_start: Optional[int] = None
-    line_end: Optional[int] = None
-    symbol: Optional[str] = None
+    repository: Optional[str] = None
     commit: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "file": self.file,
-            "line_start": self.line_start,
-            "line_end": self.line_end,
-            "symbol": self.symbol,
-            "commit": self.commit,
-        }
-
-@dataclass
-class Evidence:
-    envidence_id: str
-    repo_id: str
-    type: str
-    source: str
-    content: str
-    provenance: Provenance
-    normalized: Dict[str, Any] = field(default_factory = dict)
+    file: Optional[str] = None
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
+    source_type: Optional[str] = None
+    extractor: Optional[str] = None
     confidence: float = 1.0
-    supports: List[str] = field(default_factory = list)
-    contradicts: List[str] = field(default_factory = list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "envidence_id": self.envidence_id,
-            "repo_id": self.repo_id,
-            "type": self.type,
-            "source": self.source,
-            "content": self.content,
-            "provenance": self.provenance.to_dict(),
-            "normalized": self.normalized,
+            "repository": self.repository,
+            "commit": self.commit,
+            "file": self.file,
+            "start_line": self.start_line,
+            "end_line": self.end_line,
+            "source_type": self.source_type,
+            "extractor": self.extractor,
             "confidence": self.confidence,
-            "supports": self.supports,
-            "contradicts": self.contradicts,
             "metadata": self.metadata,
         }
 
+
 @dataclass
-class BehavioralFact:
-    fact_id: str
+class Evidence:
+    id: str
+    kind: str
     subject: str
     predicate: str
     value: Any
-    envidence_id: str
-    evidence_type: str
+    provenance: Provenance
     confidence: float = 1.0
-    provenance: Optional[Provenance] = None
+    tags: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "fact_id": self.fact_id,
+            "id": self.id,
+            "kind": self.kind,
             "subject": self.subject,
             "predicate": self.predicate,
             "value": self.value,
-            "evidence_id": self.evidence_id,
-            "evidence_type": self.evidence_type,
+            "provenance": self.provenance.to_dict(),
             "confidence": self.confidence,
-            "provenance": (
-                self.provenance.to_dict()
-                if self.provenance
-                else None
-            ),
+            "tags": self.tags,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class BehavioralFact:
+    subject: str
+    predicate: str
+    value: Any
+    evidence_ids: List[str] = field(default_factory=list)
+    confidence: float = 1.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "subject": self.subject,
+            "predicate": self.predicate,
+            "value": self.value,
+            "evidence_ids": self.evidence_ids,
+            "confidence": self.confidence,
+            "metadata": self.metadata,
         }
