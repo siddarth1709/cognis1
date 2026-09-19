@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Cognis — webhook receiver + DynamoDB tables. Everything here is on the
+  DynamoDB/Lambda Always Free allowance; Bedrock calls (made from within
+  the Lambda, not modeled here) are the only credit-funded piece.
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+    MemorySize: 256
+
+Resources:
+
+  WebhookReceiver:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_handlers/webhook_receiver.handler
+      CodeUri: .
+      FunctionUrlConfig:
+        AuthType: NONE
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ContractsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EvidenceTable
+
+  ContractsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: cognis-contracts
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: contract_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: contract_id
+          KeyType: HASH
+
+  EvidenceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: cognis-evidence
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: contract_id
+          AttributeType: S
+        - AttributeName: evidence_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: contract_id
+          KeyType: HASH
+        - AttributeName: evidence_id
+          KeyType: RANGE
+
+  InvestigationTraceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: cognis-investigation-trace
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: investigation_id
+          AttributeType: S
+        - AttributeName: step_index
+          AttributeType: N
+      KeySchema:
+        - AttributeName: investigation_id
+          KeyType: HASH
+        - AttributeName: step_index
+          KeyType: RANGE
+
+  AutonomyConfigTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: cognis-autonomy-config
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: repo_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: repo_id
+          KeyType: HASH
+
+Outputs:
+  WebhookUrl:
+    Description: Point this at your GitHub repo's webhook settings
+    Value: !GetAtt WebhookReceiverUrl.FunctionUrl
