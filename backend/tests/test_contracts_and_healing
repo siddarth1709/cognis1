@@ -1,0 +1,93 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from evidence.graph import EvidenceGraph
+from evidence.models import Evidence, Provenance
+
+from contracts.extractor import extract_contracts
+from contracts.resolver import STATUS_CONSISTENT, STATUS_CONTRADICTION, resolve_all, contradictions
+from healing.planner import plan_doc_repair
+from healing.patcher import apply_patch
+from healing.transaction import open_transaction, mark_verified, mark_patched
+from healing.immune_memory import generate_check, run_checks
+
+
+def _make_evidence(subject, predicate, value, source_type, file, confidence=1.0):
+    return Evidence(
+        id=f"{subject}:{predicate}:{source_type}",
+        kind=source_type,
+        subject=subject,
+        predicate=predicate,
+        value=value,
+        provenance=Provenance(file=file, source_type=source_type, extractor=source_type),
+        confidence=confidence,
+    )
+
+
+def test_extract_and_resolve_finds_contradiction():
+    graph = EvidenceGraph()
+    graph.add(_make_evidence("RetryPolicy", "retry_count", "3", "documentation", "README.md"))
+    graph.add(_make_evidence("RetryPolicy", "retry_count", "5", "source", "retry.py"))
+
+    contracts = extract_contracts(graph)
+    assert len(contracts) == 1
+
+    resolved = resolve_all(contracts)
+    assert resolved[0].status == STATUS_CONTRADICTION
+
+    bad = contradictions(resolved)
+    assert len(bad) == 1
+
+
+def test_extract_and_resolve_finds_consistency():
+    graph = EvidenceGraph()
+    graph.add(_make_evidence("RetryPolicy", "retry_count", "3", "documentation", "README.md"))
+    graph.add(_make_evidence("RetryPolicy", "retry_count", "3", "source", "retry.py"))
+
+    resolved = resolve_all(extract_contracts(graph))
+    assert resolved[0].status == STATUS_CONSISTENT
+
+
+def test_full_heal_cycle_patches_file(tmp_path):
+    doc_path = tmp_path / "README.md"
+    doc_path.write_text("This client retries 3 times on failure.\n", encoding="utf-8")
+
+    graph = EvidenceGraph()
+    graph.add(_make_evidence("RetryPolicy", "retry_count", "3 times", "documentation", "README.md"))
+    graph.add(_make_evidence("RetryPolicy", "retry_count", "5 times", "source", "retry.py"))
+
+    resolved = resolve_all(extract_contracts(graph))
+    contradiction = contradictions(resolved)[0]
+
+    plan = plan_doc_repair(contradiction)
+    assert plan is not None
+    assert plan.find_text == "3 times"
+    assert plan.replace_text == "5 times"
+
+    tx = open_transaction(plan)
+    tx = mark_verified(tx, verified=True, detail={"reason": "sandbox re-run confirmed 5 retries"})
+    assert tx.status == "verified"
+
+    patch_result = apply_patch(tmp_path, plan)
+    assert patch_result.applied
+    tx = mark_patched(tx, patch_result)
+    assert tx.status == "patched"
+
+    assert "5 times" in doc_path.read_text(encoding="utf-8")
+
+    check = generate_check(tx, subject="RetryPolicy", predicate="retry_count")
+    stale_graph = EvidenceGraph()
+    stale_graph.add(_make_evidence("RetryPolicy", "retry_count", "3 times", "source", "retry.py"))
+    results = run_checks([check], stale_graph)
+    assert results[0].passed is False
+
+
+if __name__ == "__main__":
+    import tempfile
+    test_extract_and_resolve_finds_contradiction()
+    test_extract_and_resolve_finds_consistency()
+    with tempfile.TemporaryDirectory() as d:
+        test_full_heal_cycle_patches_file(Path(d))
+    print("All contract/healing tests passed.")

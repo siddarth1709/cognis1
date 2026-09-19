@@ -1,0 +1,83 @@
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from agent import FakeModelClient
+from orchestrator import run_pipeline
+
+
+def test_full_pipeline_heals_a_real_repo_on_disk(tmp_path):
+    (tmp_path / "README.md").write_text(
+        "This client retries 3 times on failure.\n", encoding="utf-8"
+    )
+    (tmp_path / "retry.py").write_text(
+        "def call():\n    for attempt in range(5):\n        pass  # retries 5 times\n",
+        encoding="utf-8",
+    )
+
+    scripted = [
+        json.dumps({
+            "action": "decide",
+            "verdict": "confirmed_drift",
+            "confidence": 0.92,
+            "summary": "Doc says 3 retries, code implements 5.",
+        }),
+    ]
+
+    result = run_pipeline(
+        repo_root=tmp_path,
+        repo_name="demo/repo",
+        model_client=FakeModelClient(scripted),
+        apply_patches=True,
+    )
+
+    assert len(result.transactions) == 1
+    assert result.escalated == []
+    assert len(result.regression_checks) == 1
+
+    tx = result.transactions[0]
+    assert tx.status == "patched"
+    assert tx.patch_result.applied
+
+    assert "5 times" in (tmp_path / "README.md").read_text(encoding="utf-8")
+
+
+def test_low_confidence_escalates_instead_of_patching(tmp_path):
+    (tmp_path / "README.md").write_text(
+        "This client retries 3 times on failure.\n", encoding="utf-8"
+    )
+    (tmp_path / "retry.py").write_text(
+        "def call():\n    for attempt in range(5):\n        pass  # retries 5 times\n",
+        encoding="utf-8",
+    )
+
+    scripted = [
+        json.dumps({
+            "action": "decide",
+            "verdict": "confirmed_drift",
+            "confidence": 0.4,
+            "summary": "Possible drift, low confidence.",
+        }),
+    ]
+
+    result = run_pipeline(
+        repo_root=tmp_path,
+        repo_name="demo/repo",
+        model_client=FakeModelClient(scripted),
+        apply_patches=True,
+    )
+
+    assert len(result.transactions) == 0
+    assert len(result.escalated) == 1
+    assert "3 times" in (tmp_path / "README.md").read_text(encoding="utf-8")
+
+
+if __name__ == "__main__":
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        test_full_pipeline_heals_a_real_repo_on_disk(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        test_low_confidence_escalates_instead_of_patching(Path(d))
+    print("All orchestrator tests passed.")
