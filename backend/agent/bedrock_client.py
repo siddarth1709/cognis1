@@ -18,7 +18,7 @@ class BedrockModelClient:
         import boto3  
 
         self.model_id = model_id or os.environ.get(
-            "COGNIS_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0"
+            "COGNIS_MODEL_ID", "anthropic.claude-sonnet-4-6"
         )
         self.client = boto3.client(
             "bedrock-runtime", region_name=region or os.environ.get("AWS_REGION", "us-east-1")
@@ -39,7 +39,6 @@ class BedrockModelClient:
             accept="application/json",
         )
         payload = json.loads(response["body"].read())
-
         return "".join(
             block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text"
         )

@@ -38,6 +38,7 @@ from agent.bedrock_client import ModelClient
 from agent.tools import SandboxRunner, SubprocessSandboxRunner
 
 from healing.planner import plan_doc_repair, HealPlan
+from healing.planner import plan_document_creation
 from healing.patcher import apply_patch
 from healing.transaction import (
     HealTransaction,
@@ -87,6 +88,7 @@ def run_pipeline(
     autonomy_threshold: float = DEFAULT_AUTONOMY_THRESHOLD,
     sandbox_runner: Optional[SandboxRunner] = None,
     apply_patches: bool = True,
+    force_documentation: bool = False,
 ) -> PipelineResult:
     model_client = model_client or BedrockModelClient()
     sandbox_runner = sandbox_runner or SubprocessSandboxRunner(runtimes={"python": ["python3"]})
@@ -143,6 +145,24 @@ def run_pipeline(
             transactions=transactions, checks=checks, escalated=escalated,
         )
 
+    # A repo with no documentation cannot be repaired in-place. A user can
+    # also explicitly request a fresh, reviewable baseline when existing docs
+    # are incomplete or stale; it is still only written to the downloadable
+    # artifact, never committed to the source repository.
+    if force_documentation or not doc_texts:
+        creation_plan = plan_document_creation(
+            (evidence for contract in resolved for evidence in contract.contract.code_evidence),
+            repo_name,
+        )
+        if creation_plan is not None:
+            _record_document_creation(
+                plan=creation_plan,
+                repo_root=repo_root,
+                apply_patches=apply_patches,
+                transactions=transactions,
+                checks=checks,
+            )
+
     return PipelineResult(
         repo_root=str(repo_root),
         resolved_contracts=resolved,
@@ -151,6 +171,20 @@ def run_pipeline(
         regression_checks=checks,
         escalated=escalated,
     )
+
+
+def _record_document_creation(*, plan, repo_root, apply_patches, transactions, checks) -> None:
+    tx = open_transaction(plan)
+    tx = mark_verified(tx, verified=True, detail={
+        "verification": "source_evidence",
+        "summary": "Created from implementation evidence because no documentation files were found.",
+    })
+    if apply_patches:
+        patch_result = apply_patch(repo_root, plan)
+        tx = mark_patched(tx, patch_result)
+        if tx.status == STATUS_PATCHED:
+            checks.append(generate_check(tx, subject="Documentation", predicate="generated_reference"))
+    transactions.append(tx)
 
 
 def _investigate_and_heal(

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { MonumentalNav } from "@/components/common/MonumentalNav";
 import { DiffView } from "@/components/healing/DiffView";
-import { getHealTransactions, HealTransactionDTO, TransactionStatus } from "@/lib/healing-data";
+import { getInvestigations, HealTransactionDTO, transactionsFor, TransactionStatus } from "@/lib/healing-data";
 
 const STATUS_LABEL: Record<TransactionStatus, string> = {
   pending_verification: "AWAITING VERIFICATION",
@@ -82,17 +82,20 @@ export default function HealingPage() {
 
   const [transactions, setTransactions] = useState<HealTransactionDTO[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [downloadBusy, setDownloadBusy] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.push("/sign-in");
   }, [user, loading, router]);
 
   useEffect(() => {
-    getHealTransactions().then((txs) => {
+    if (!user) return;
+    getInvestigations(user.uid).then((records) => {
+      const txs = transactionsFor(records);
       setTransactions(txs);
       setSelectedId((current) => current ?? txs[0]?.transaction_id ?? null);
     });
-  }, []);
+  }, [user]);
 
   if (loading || !user) {
     return (
@@ -106,6 +109,19 @@ export default function HealingPage() {
   }
 
   const selected = transactions?.find((t) => t.transaction_id === selectedId) ?? null;
+
+  async function downloadPatchedArtifact() {
+    if (!selected?.investigation_id) return;
+    setDownloadBusy(true);
+    try {
+      const response = await fetch(`/api/investigations/${encodeURIComponent(selected.investigation_id)}/artifact`, { cache: "no-store" });
+      const payload = await response.json() as { url?: string };
+      if (!response.ok || !payload.url) throw new Error("The generated artifact is not available.");
+      window.open(payload.url, "_blank", "noopener,noreferrer");
+    } finally {
+      setDownloadBusy(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#080806] text-[#F2EFE9] selection:bg-[#E05A2B]/30 selection:text-[#F2EFE9]">
@@ -185,7 +201,7 @@ export default function HealingPage() {
 
                   <div className="mt-6">
                     <span className="text-[9px] font-mono-tech text-[#66655E] uppercase tracking-[0.16em] block mb-2">
-                      Patch — measured confidence {selected.plan.confidence.toFixed(2)}
+                      {selected.plan.operation === "create" ? "Generated document" : "Patch"} — measured confidence {selected.plan.confidence.toFixed(2)}
                     </span>
                     {selected.patch_result?.diff ? (
                       <DiffView diff={selected.patch_result.diff} />
@@ -199,8 +215,8 @@ export default function HealingPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-4 mt-8 pt-6 border-t border-[#1C1C17]">
-                    <button type="button" className="btn-monumental-secondary text-[10px]">
-                      DOWNLOAD PATCH
+                    <button type="button" onClick={() => void downloadPatchedArtifact()} disabled={downloadBusy || !selected.investigation_id} className="btn-monumental-secondary text-[10px] disabled:opacity-30 disabled:pointer-events-none">
+                      {downloadBusy ? "PREPARING…" : selected.plan.operation === "create" ? "DOWNLOAD GENERATED DOC" : "DOWNLOAD PATCH"}
                     </button>
                     <button
                       type="button"

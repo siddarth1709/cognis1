@@ -26,6 +26,10 @@
       "type": "number",
       "minimum": 0,
       "maximum": 1
+    },
+    "force_documentation": {
+      "type": "boolean",
+      "description": "Create a reviewable generated documentation baseline even when documentation files already exist."
     }
   }
 }

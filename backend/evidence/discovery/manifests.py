@@ -51,6 +51,7 @@ def _load_yaml(
         OSError,
         ValueError,
         UnicodeDecodeError,
+        yaml.YAMLError,
     ):
         return None
 

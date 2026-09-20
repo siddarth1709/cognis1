@@ -19,6 +19,23 @@ class PatchResult:
 def apply_patch(repo_root: Path, plan: HealPlan) -> PatchResult:
     path = repo_root / plan.target_file
 
+    if plan.operation == "create":
+        if path.exists():
+            return PatchResult(
+                applied=False,
+                target_file=plan.target_file,
+                error=f"Refusing to overwrite existing file {plan.target_file}",
+            )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        updated = plan.replace_text.rstrip() + "\n"
+        diff = "".join(difflib.unified_diff(
+            [], updated.splitlines(keepends=True),
+            fromfile="/dev/null",
+            tofile=f"b/{plan.target_file}",
+        ))
+        path.write_text(updated, encoding="utf-8")
+        return PatchResult(applied=True, target_file=plan.target_file, diff=diff)
+
     try:
         original = path.read_text(encoding="utf-8")
     except OSError as e:

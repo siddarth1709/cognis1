@@ -20,7 +20,7 @@
         {
           "ErrorEquals": ["States.ALL"],
           "ResultPath": "$.error",
-          "Next": "Failed"
+          "Next": "RecordFailure"
         }
       ]
     },
@@ -42,7 +42,7 @@
         {
           "ErrorEquals": ["States.ALL"],
           "ResultPath": "$.error",
-          "Next": "Failed"
+          "Next": "RecordFailure"
         }
       ]
     },
@@ -64,6 +64,18 @@
         {
           "ErrorEquals": ["States.ALL"],
           "ResultPath": "$.error",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "RecordFailure": {
+      "Type": "Task",
+      "Resource": "${PersistFunctionArn}",
+      "ResultPath": "$.failure",
+      "Next": "Failed",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
           "Next": "Failed"
         }
       ]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from decimal import Decimal
 
 import boto3
 
@@ -11,16 +12,40 @@ dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ["INVESTIGATIONS_TABLE"]
 
 
+def _failure_message(error: object) -> str:
+    if isinstance(error, str):
+        return error[:1000]
+    return json.dumps(error, default=str)[:1000]
+
+
 def handler(event, context):
     investigation_id = event["investigation_id"]
+    table = dynamodb.Table(TABLE_NAME)
+
+    if event.get("error"):
+        table.put_item(
+            Item={
+                "investigation_id": investigation_id,
+                "status": "FAILED",
+                "repository": event["repository"],
+                "owner": event["owner"],
+                "ref": event["ref"],
+                "created_at": int(time.time()),
+                "error": _failure_message(event["error"]),
+            }
+        )
+        return {"investigation_id": investigation_id, "status": "FAILED"}
+
     engine = event["engine"]
     bucket = engine["result_bucket"]
     key = engine["result_key"]
 
     object_body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
-    result = json.loads(object_body)
+    # DynamoDB rejects Python floats. Parsing JSON decimals as Decimal preserves
+    # the engine output's numeric values while making the complete nested result
+    # safe to persist.
+    result = json.loads(object_body, parse_float=Decimal)
 
-    table = dynamodb.Table(TABLE_NAME)
     table.put_item(
         Item={
             "investigation_id": investigation_id,
