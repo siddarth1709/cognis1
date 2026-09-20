@@ -57,6 +57,70 @@ Resources:
             Status: Enabled
             ExpirationInDays: 14
 
+  PublishedDocsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  PublishedDocsOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub cognis-published-docs-${AWS::StackName}
+        Description: CloudFront-only access to Cognis publication-gate documents.
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  PublishedDocsDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub Cognis live documentation for ${AWS::StackName}
+        Origins:
+          - Id: PublishedDocsS3Origin
+            DomainName: !GetAtt PublishedDocsBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt PublishedDocsOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: PublishedDocsS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD, OPTIONS]
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        PriceClass: PriceClass_100
+
+  PublishedDocsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PublishedDocsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${PublishedDocsBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${PublishedDocsDistribution}
+
   InvestigationsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -137,6 +201,32 @@ Resources:
         - AttributeName: contract_id
           KeyType: RANGE
 
+  PublishedDocumentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+        - AttributeName: repository_key
+          AttributeType: S
+        - AttributeName: published_at
+          AttributeType: N
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: repository-published-at
+          KeySchema:
+            - AttributeName: repository_key
+              KeyType: HASH
+            - AttributeName: published_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
   ObserveFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -195,9 +285,16 @@ Resources:
             BucketName: !Ref ArtifactBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref InvestigationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PublishedDocumentsTable
+        - S3WritePolicy:
+            BucketName: !Ref PublishedDocsBucket
       Environment:
         Variables:
           INVESTIGATIONS_TABLE: !Ref InvestigationsTable
+          PUBLISHED_DOCUMENTS_TABLE: !Ref PublishedDocumentsTable
+          PUBLISHED_DOCS_BUCKET: !Ref PublishedDocsBucket
+          PUBLISHED_DOCS_CLOUDFRONT_URL: !Sub https://${PublishedDocsDistribution.DomainName}
 
   StatusFunction:
     Type: AWS::Serverless::Function
@@ -214,6 +311,7 @@ Resources:
       Environment:
         Variables:
           INVESTIGATIONS_TABLE: !Ref InvestigationsTable
+          PUBLISHED_DOCS_CLOUDFRONT_URL: !Sub https://${PublishedDocsDistribution.DomainName}
 
   InvestigationStateMachine:
     Type: AWS::Serverless::StateMachine
@@ -292,6 +390,7 @@ Resources:
       Environment:
         Variables:
           INVESTIGATIONS_TABLE: !Ref InvestigationsTable
+          PUBLISHED_DOCS_CLOUDFRONT_URL: !Sub https://${PublishedDocsDistribution.DomainName}
       Events:
         GetInvestigation:
           Type: HttpApi
@@ -320,3 +419,11 @@ Outputs:
   ArtifactBucketName:
     Description: S3 bucket holding repository and investigation artifacts.
     Value: !Ref ArtifactBucket
+
+  PublishedDocumentsBucketName:
+    Description: Private S3 origin for publication-gate documents.
+    Value: !Ref PublishedDocsBucket
+
+  PublishedDocumentsUrl:
+    Description: CloudFront base URL for Cognis live documents.
+    Value: !Sub https://${PublishedDocsDistribution.DomainName}

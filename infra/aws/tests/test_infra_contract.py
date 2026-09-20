@@ -52,6 +52,17 @@ def test_template_has_resources_and_core_services():
     assert "AWS::S3::Bucket" in types
 
 
+def test_live_docs_use_a_private_s3_origin_and_cloudfront():
+    template = yaml.load((ROOT / "template.yaml").read_text(), Loader=CloudFormationLoader)
+    resources = template["Resources"]
+
+    assert resources["PublishedDocsBucket"]["Properties"]["PublicAccessBlockConfiguration"]["RestrictPublicBuckets"] is True
+    assert resources["PublishedDocsDistribution"]["Type"] == "AWS::CloudFront::Distribution"
+    assert resources["PublishedDocumentsTable"]["Properties"]["GlobalSecondaryIndexes"][0]["IndexName"] == "repository-published-at"
+    persist = resources["PersistFunction"]["Properties"]
+    assert persist["Environment"]["Variables"]["PUBLISHED_DOCUMENTS_TABLE"] == "PublishedDocumentsTable"
+
+
 def test_state_machine_is_valid_json():
     definition = json.loads((ROOT / "statemachine/pipeline.asl.json").read_text())
     assert definition["StartAt"] == "Observe"

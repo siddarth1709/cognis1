@@ -5,7 +5,7 @@ const runtimeUrl = process.env.COGNIS_API_URL?.replace(/\/$/, "");
 const runtimeApiKey = process.env.COGNIS_API_KEY;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ investigationId: string }> },
 ) {
   const { investigationId } = await params;
@@ -17,7 +17,8 @@ export async function GET(
     return NextResponse.json({ error: "COGNIS_API_KEY is required when using the AWS runtime." }, { status: 500 });
   }
   try {
-    const response = await fetch(`${runtimeUrl}/v1/investigations/${encodeURIComponent(investigationId)}`, {
+    const query = new URL(request.url).searchParams.get("document") === "live" ? "?document=live" : "";
+    const response = await fetch(`${runtimeUrl}/v1/investigations/${encodeURIComponent(investigationId)}${query}`, {
       headers: { "x-cognis-api-key": runtimeApiKey },
       cache: "no-store",
     });

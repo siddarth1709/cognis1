@@ -20,7 +20,7 @@ Vercel / GitHub
    \       /
       Persist
          |
-   DynamoDB + S3
+   DynamoDB + S3 --(verified publication gate)--> private S3 --> CloudFront live docs
 ```
 
 ## Important boundary
@@ -57,6 +57,15 @@ sam deploy
 When prompted, supply a unique `CognisApiKey` (at least 32 characters). Set the same value as
 the server-only `COGNIS_API_KEY` in the Next.js host. The dashboard proxies that key to AWS;
 do not expose it with a `NEXT_PUBLIC_` prefix.
+
+## Live documentation publication gate
+
+`PersistFunction` publishes a versioned Markdown reference only when every candidate
+transaction is verified or patched and none is rejected. The publication record, its
+repository index, and immutable investigation link are stored in `PublishedDocumentsTable`.
+The document itself is stored in a separate private S3 bucket; CloudFront is the only
+principal allowed to read that bucket. The investigation result carries the resulting
+CloudFront URL, and the Case Files screen exposes it as **Open verified live doc**.
 
 ## GitHub repositories
 

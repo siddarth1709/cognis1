@@ -52,6 +52,7 @@ export default function HealingPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [committed, setCommitted] = useState<Set<string>>(new Set());
+  const [publicationUrl, setPublicationUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push("/sign-in");
@@ -95,6 +96,17 @@ export default function HealingPage() {
   function handleCommit() {
     if (!selectedId) return;
     setCommitted((prev) => new Set([...prev, selectedId]));
+  }
+
+  async function openLiveDocument() {
+    if (!selected?.investigation_id) return;
+    setPublicationUrl(null);
+    const response = await fetch(`/api/investigations/${encodeURIComponent(selected.investigation_id)}?document=live`, { cache: "no-store" });
+    const payload = await response.json() as { publication?: { url?: string } };
+    if (response.ok && payload.publication?.url) {
+      setPublicationUrl(payload.publication.url);
+      window.open(payload.publication.url, "_blank", "noopener,noreferrer");
+    }
   }
 
   return (
@@ -261,6 +273,14 @@ export default function HealingPage() {
                     >
                       <DownloadIcon size={12} />
                       {downloadBusy ? "PREPARING…" : selected.plan.operation === "create" ? "DOWNLOAD GENERATED DOC" : "DOWNLOAD PATCH"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void openLiveDocument()}
+                      disabled={!selected.investigation_id}
+                      className="bg-[#13131C] hover:bg-[#1A1A24] text-[#9AA68A] border border-[#9AA68A]/30 font-mono-tech text-xs px-4 py-2.5 rounded-lg transition-all disabled:opacity-30 disabled:pointer-events-none"
+                    >
+                      {publicationUrl ? "LIVE DOC OPENED" : "OPEN VERIFIED LIVE DOC"}
                     </button>
                   </div>
                 </div>

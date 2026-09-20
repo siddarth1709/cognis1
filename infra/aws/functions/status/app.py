@@ -65,4 +65,10 @@ def handler(event, context):
         )
         return _response(200, {"url": url, "expires_in": 300})
 
+    if query.get("document") == "live":
+        publication = item.get("publication")
+        if not publication:
+            return _response(404, {"error": "No verified live document has been published for this investigation"})
+        return _response(200, {"publication": publication})
+
     return _response(200, item)

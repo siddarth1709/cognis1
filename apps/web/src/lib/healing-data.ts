@@ -18,6 +18,7 @@ export interface PipelineResultDTO {
 export interface InvestigationRecordDTO {
   investigation_id: string; status: "SUCCEEDED" | "FAILED" | "RUNNING"; repository: string;
   owner: string; ref: string; created_at: number; result?: PipelineResultDTO; error?: string;
+  publication?: { document_id: string; status: "PUBLISHED"; url?: string; published_at: number };
 }
 
 const storageKey = (userId: string) => `cognis:investigations:${userId}`;
