@@ -4,11 +4,11 @@ import React, { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { IndustrialLogo } from "@/components/ui/IndustrialLogo";
+import { MonumentalNav } from "@/components/common/MonumentalNav";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -31,49 +31,11 @@ export default function DashboardPage() {
   const userName = user.displayName || userEmail.split("@")[0];
   const providerId = user.providerData?.[0]?.providerId || "password";
 
-  const handleSignOut = async () => {
-    await logout();
-    router.push("/");
-  };
-
   return (
     <main className="min-h-screen bg-[#080806] text-[#F2EFE9] flex flex-col justify-between selection:bg-[#E05A2B]/30 selection:text-[#F2EFE9]">
-      {/* Top Header */}
-      <header className="h-[72px] border-b border-[#1C1C17] px-6 sm:px-12 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3 group">
-          <IndustrialLogo size={22} />
-          <div className="flex flex-col">
-            <span className="text-[15px] font-mono-tech tracking-[0.16em] uppercase text-[#F2EFE9] font-medium leading-none">
-              COGNIS
-            </span>
-            <span className="text-[9px] font-mono-tech tracking-[0.2em] text-[#66655E] uppercase mt-1">
-              ENTERPRISE NODE
-            </span>
-          </div>
-        </Link>
+      <MonumentalNav />
 
-        <div className="flex items-center gap-4">
-          <Link
-            href="/"
-            className="text-[11px] font-mono-tech tracking-[0.14em] text-[#8C887B] hover:text-[#F2EFE9] transition-colors uppercase hidden sm:inline"
-          >
-            ← LANDING VIEW
-          </Link>
-
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="btn-monumental h-[38px] px-4 text-[10px]"
-          >
-            <span>SIGN OUT</span>
-            <span className="text-[#D8663D]">⎋</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main Dashboard Space */}
-      <div className="max-w-[1200px] w-full mx-auto px-6 sm:px-12 py-12 flex-1">
-        {/* User Identity Header */}
+      <div className="max-w-[1200px] w-full mx-auto px-6 sm:px-12 pt-[104px] sm:pt-[124px] pb-12 flex-1">
         <div className="mb-10 pb-8 border-b border-[#1C1C17]">
           <div className="badge-tech mb-3">
             <span className="w-1.5 h-1.5 rounded-full bg-[#9AA68A]" />
@@ -88,7 +50,6 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Telemetry Metrics Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="panel-industrial p-5">
             <span className="text-[9px] font-mono-tech text-[#66655E] uppercase tracking-[0.16em] block mb-2">
@@ -126,7 +87,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Enterprise Invariant Actions */}
         <div className="panel-elevated p-6 sm:p-8">
           <div className="flex items-center justify-between pb-4 mb-6 border-b border-[#1C1C17]">
             <span className="text-[11px] font-mono-tech tracking-[0.16em] text-[#F2EFE9] uppercase">
@@ -136,9 +96,13 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex flex-wrap gap-4">
-            <Link href="/#hero-experience" className="btn-monumental text-[10px]">
-              <span>EXPLORE 3D ENTITY UNIVERSE</span>
+            <Link href="/dashboard/healing" className="btn-monumental text-[10px]">
+              <span>OPEN HEALING LEDGER</span>
               <span className="text-[#D8663D]">→</span>
+            </Link>
+
+            <Link href="/#hero-experience" className="btn-monumental-secondary text-[10px]">
+              EXPLORE 3D ENTITY UNIVERSE
             </Link>
 
             <button
@@ -152,7 +116,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="h-[60px] border-t border-[#1C1C17] px-6 sm:px-12 flex items-center justify-between text-[10px] font-mono-tech text-[#66655E]">
         <span>COGNIS WORKSPACE // SECURE ENTERPRISE ENCLAVE</span>
         <span>LATENCY: 0.04ms</span>
