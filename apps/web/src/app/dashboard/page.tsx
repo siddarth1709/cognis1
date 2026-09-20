@@ -162,12 +162,23 @@ export default function DashboardPage() {
   const refresh = useCallback(async () => {
     if (!user) return;
     const saved = await getInvestigations(user.uid);
-    if (saved.length > 0) {
-      setRecords(saved.sort((a, b) => b.created_at - a.created_at));
-    } else {
-      setRecords([]);
-    }
-  }, [user]);
+    setRecords((current) => {
+      const activeOptimisticRecord = startedId
+        ? current.find((record) => record.investigation_id === startedId && record.status === "RUNNING")
+        : undefined;
+      const hasServerRecord = startedId
+        ? saved.some((record) => record.investigation_id === startedId)
+        : false;
+
+      // The local/API record may not be readable on the first poll. Preserve the
+      // optimistic running record until the server returns its authoritative copy.
+      const next = activeOptimisticRecord && !hasServerRecord
+        ? [activeOptimisticRecord, ...saved.filter((record) => record.investigation_id !== startedId)]
+        : saved;
+
+      return next.sort((a, b) => b.created_at - a.created_at);
+    });
+  }, [startedId, user]);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/sign-in");
@@ -251,7 +262,6 @@ export default function DashboardPage() {
       ]);
       setShowScanModal(false);
       setView("overview");
-      void refresh();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Unable to start scan.");
     } finally {
