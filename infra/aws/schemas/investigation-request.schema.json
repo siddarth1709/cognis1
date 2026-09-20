@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cognis Investigation Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["owner", "repository", "ref"],
+  "properties": {
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "autonomy_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

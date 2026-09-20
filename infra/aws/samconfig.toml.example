@@ -1,0 +1,9 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "cognis-production"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+region = "ap-south-1"
+parameter_overrides = "CognisModelId=anthropic.claude-3-5-sonnet-20241022-v2:0 CognisAutonomyThreshold=0.75"

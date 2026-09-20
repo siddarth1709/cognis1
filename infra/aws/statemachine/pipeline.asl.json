@@ -1,0 +1,82 @@
+{
+  "Comment": "Cognis investigation pipeline",
+  "StartAt": "Observe",
+  "States": {
+    "Observe": {
+      "Type": "Task",
+      "Resource": "${ObserveFunctionArn}",
+      "ResultPath": "$.observe",
+      "TimeoutSeconds": 120,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Engine",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Failed"
+        }
+      ]
+    },
+    "Engine": {
+      "Type": "Task",
+      "Resource": "${EngineFunctionArn}",
+      "ResultPath": "$.engine",
+      "TimeoutSeconds": 900,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed", "Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Persist",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Failed"
+        }
+      ]
+    },
+    "Persist": {
+      "Type": "Task",
+      "Resource": "${PersistFunctionArn}",
+      "ResultPath": "$.persist",
+      "TimeoutSeconds": 60,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Succeeded",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Failed"
+        }
+      ]
+    },
+    "Succeeded": {
+      "Type": "Pass",
+      "Result": {"status": "SUCCEEDED"},
+      "End": true
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "CognisInvestigationFailed",
+      "Cause": "A Cognis pipeline stage failed. Inspect the execution history and CloudWatch logs."
+    }
+  }
+}
