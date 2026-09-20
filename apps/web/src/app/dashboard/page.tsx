@@ -234,9 +234,24 @@ export default function DashboardPage() {
       });
       saveInvestigationId(user!.uid, payload.investigation_id);
       setStartedId(payload.investigation_id);
+      // Make the running investigation visible before the first GET round-trip.
+      // Without this optimistic record the modal closes onto the prior dashboard
+      // for a moment, which makes the scan feel as though it has not started.
+      const optimisticRecord: InvestigationRecordDTO = {
+        investigation_id: payload.investigation_id,
+        status: "RUNNING",
+        owner: form.owner.trim(),
+        repository: form.repository.trim(),
+        ref: form.ref.trim(),
+        created_at: Math.floor(Date.now() / 1000),
+      };
+      setRecords((current) => [
+        optimisticRecord,
+        ...current.filter((record) => record.investigation_id !== optimisticRecord.investigation_id),
+      ]);
       setShowScanModal(false);
       setView("overview");
-      await refresh();
+      void refresh();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Unable to start scan.");
     } finally {
