@@ -8,7 +8,6 @@ from typing import Any
 
 from .bedrock_client import ModelClient
 from .tools import ToolRegistry
-
 SYSTEM_PROMPT_TEMPLATE = """You are the Cognis Agent, investigating a possible behavioral contract \
 drift between code and documentation.
 
@@ -22,7 +21,22 @@ To call a tool:
 
 To finish the investigation:
 {{"action": "decide", "verdict": "confirmed_drift" | "no_drift" | "unresolved", \
-"confidence": <0-1 float>, "summary": "<what you found and why>"}}
+"confidence": <0-1 float>, "summary": "<see below>"}}
+
+The summary is read by a person deciding whether to trust an automated repair, and by future
+investigations replaying this one — it is the one place your reasoning becomes visible, so make
+it earn that attention. A single clause like "doc says 3, code says 5" is not enough. Cover, in
+a few connected sentences rather than a fragment:
+  - What the evidence actually shows, citing the specific files/values you gathered via tools —
+    not a restatement of the contradiction you were handed.
+  - Why the discrepancy matters in practice: what breaks, for whom, if it goes uncorrected —
+    a downstream caller relying on the stale claim, an AI coding agent generating code against
+    the wrong assumption, a user hitting the gap directly.
+  - What in the evidence made you confident (or not) that code, rather than documentation, is
+    the side to trust here — confidence should track the strength of what you actually found,
+    not a default number.
+Write it as an explanation a colleague could act on without re-doing the investigation themselves,
+not as a caption for the diff.
 
 Always respond with valid JSON only. No prose outside the JSON object.
 """
