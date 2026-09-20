@@ -48,7 +48,7 @@ function createMockUser(email = "operator@cognis.dev", displayName = "Cognis Ope
     tenantId: null,
     delete: async () => {},
     getIdToken: async () => "mock_id_token",
-    getIdTokenResult: async () => ({} as any),
+    getIdTokenResult: async () => ({} as import('firebase/auth').IdTokenResult),
     reload: async () => {},
     toJSON: () => ({}),
     phoneNumber: null,

@@ -444,7 +444,7 @@ export default function DashboardPage() {
                   <p className="text-sm font-semibold text-[#F2EFE9]">
                     Update <code className="text-[#9AA68A] bg-[#13131C] px-1.5 py-0.5 rounded text-xs">{conflictFile}</code>
                     {conflictFrom && conflictTo && (
-                      <> — change <span className="text-[#E87A68]">"{conflictFrom}"</span> to <span className="text-[#9AA68A]">"{conflictTo}"</span></>
+                      <> — change <span className="text-[#E87A68]">&quot;{conflictFrom}&quot;</span> to <span className="text-[#9AA68A]">&quot;{conflictTo}&quot;</span></>
                     )}
                   </p>
                   <p className="text-xs text-[#7A7A8E]">
