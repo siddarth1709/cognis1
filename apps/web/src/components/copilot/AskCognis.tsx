@@ -35,10 +35,10 @@ export function AskCognis({ owner = "siddarth709", repository = "cognis" }: AskC
       role: "assistant",
       content: `### Cognis Epistemological Copilot Initialized
 
-I am **Cognis Epistemological Copilot**, powered by **Amazon Bedrock (Claude 3.5 Sonnet)**. I conduct cross-surface topological audits to detect **knowledge divergence** between code ASTs, runtime test traces, and documentation.
+I am **Cognis Epistemological Copilot**, powered by **Amazon Bedrock (Nova Lite)**. I conduct cross-surface topological audits to detect **knowledge divergence** between code ASTs, runtime test traces, and documentation.
 
 Ask me any architectural inquiry regarding **${owner}/${repository}**, contract invariants, or AI agent drift risks.`,
-      model_used: "anthropic.claude-3-5-sonnet-20241022-v2:0 (Amazon Bedrock)",
+      model_used: "amazon.nova-lite-v1:0 (Amazon Bedrock)",
       confidence: 0.98,
     },
   ]);

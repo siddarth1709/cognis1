@@ -1,24 +1,28 @@
 import {
   BedrockRuntimeClient,
-  InvokeModelCommand,
+  ConverseCommand,
 } from "@aws-sdk/client-bedrock-runtime";
+
+export interface BedrockCitation {
+  file: string;
+  lineRange?: string;
+  snippet: string;
+  type: "code" | "documentation" | "manifest" | "test";
+}
+
+export interface BedrockContradictionWarning {
+  subject: string;
+  reason: string;
+  doc_file: string;
+  code_file: string;
+}
 
 export interface BedrockQueryResult {
   answer: string;
   source: "bedrock-live" | "bedrock-simulated";
   modelUsed: string;
-  citations: {
-    file: string;
-    lineRange?: string;
-    snippet: string;
-    type: "code" | "documentation" | "manifest" | "test";
-  }[];
-  contradiction_warning?: {
-    subject: string;
-    reason: string;
-    doc_file: string;
-    code_file: string;
-  };
+  citations: BedrockCitation[];
+  contradiction_warning?: BedrockContradictionWarning;
   confidence: number;
 }
 
@@ -31,7 +35,235 @@ You do not give shallow, generic advice. You analyze:
 3. Mathematical/empirical confidence metrics.
 4. Concrete AST-level remediation patches.
 
-Provide well-structured answers using clear Markdown paragraphs and precise code references.`;
+Provide well-structured answers using clear Markdown paragraphs and precise code references.
+
+GROUNDED CITATION PROTOCOL:
+If your response references specific repository files, code contracts, documentation, or tests, provide structured citation metadata at the very end of your response inside a \`\`\`json:metadata code block:
+\`\`\`json:metadata
+{
+  "citations": [
+    {
+      "file": "path/to/file.ext",
+      "lineRange": "L10-L25",
+      "snippet": "exact snippet or invariant cited",
+      "type": "code" | "documentation" | "manifest" | "test"
+    }
+  ],
+  "contradiction_warning": {
+    "subject": "Name of divergent contract/feature",
+    "reason": "Clear explanation of divergence between doc/code/test",
+    "doc_file": "path/to/documentation",
+    "code_file": "path/to/code"
+  },
+  "confidence": 0.95
+}
+\`\`\`
+Rules for citations:
+- ONLY include citations for files and evidence actually relevant to and discussed in your response.
+- If no specific files are cited, output "citations": [].
+- If no contradiction or divergence is detected, omit contradiction_warning.
+- Never invent or fabricate unrelated files.`;
+
+export function normalizeLineRange(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+
+  if (/^L\d+(?:-L?\d+)?$/i.test(trimmed)) {
+    return trimmed.toUpperCase().replace(/-L/i, "-L");
+  }
+
+  const match = trimmed.match(/(?:lines?|L)?\s*(\d+)(?:\s*(?:-|–|—|to)\s*(?:lines?|L)?(\d+))?/i);
+  if (match) {
+    const start = match[1];
+    const end = match[2];
+    return end ? `L${start}-L${end}` : `L${start}`;
+  }
+
+  return trimmed;
+}
+
+export function determineFileType(file: string): "code" | "documentation" | "manifest" | "test" {
+  const lower = file.toLowerCase();
+  if (
+    lower.includes("/tests/") ||
+    lower.includes("/test/") ||
+    lower.startsWith("tests/") ||
+    lower.startsWith("test/") ||
+    lower.endsWith("_test.py") ||
+    lower.endsWith(".test.ts") ||
+    lower.endsWith(".test.js") ||
+    lower.endsWith(".spec.ts") ||
+    lower.endsWith(".spec.js")
+  ) {
+    return "test";
+  }
+  if (
+    lower.endsWith(".yaml") ||
+    lower.endsWith(".yml") ||
+    lower.endsWith(".json") ||
+    lower.endsWith(".toml") ||
+    lower.endsWith("dockerfile") ||
+    lower.endsWith(".dockerignore") ||
+    lower.endsWith(".gitignore") ||
+    lower.includes("agents.md") ||
+    lower.includes("claude.md") ||
+    lower.includes(".cursorrules")
+  ) {
+    return "manifest";
+  }
+  if (
+    lower.endsWith(".md") ||
+    lower.endsWith(".mdx") ||
+    lower.endsWith(".rst") ||
+    lower.includes("/docs/") ||
+    lower.startsWith("docs/")
+  ) {
+    return "documentation";
+  }
+  return "code";
+}
+
+export function extractHeuristicCitations(text: string): {
+  citations: BedrockCitation[];
+  contradiction_warning?: BedrockContradictionWarning;
+} {
+  const citations: BedrockCitation[] = [];
+  const seenFiles = new Set<string>();
+
+  const fileRegex = /\b(?:[a-zA-Z0-9_\-./]+\/(?:[a-zA-Z0-9_.-]+)\.(?:py|ts|tsx|js|jsx|json|yaml|yml|md|rst|toml)|(?:AGENTS\.md|CLAUDE\.md|README\.md|package\.json|template\.yaml))\b/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = fileRegex.exec(text)) !== null) {
+    const rawFile = match[0].replace(/^[`'"]+|[`'"]+$/g, "");
+    if (seenFiles.has(rawFile)) continue;
+    if (rawFile.includes("http") || rawFile.startsWith("node_modules/")) continue;
+
+    seenFiles.add(rawFile);
+    const index = match.index;
+
+    const contextStart = Math.max(0, index - 80);
+    const contextEnd = Math.min(text.length, index + rawFile.length + 150);
+    const contextSnippet = text.slice(contextStart, contextEnd);
+
+    const lineMatch = contextSnippet.match(/(?:lines?|L)\s*(\d+)(?:\s*(?:-|–|—|to)\s*(?:lines?|L)?(\d+))?/i);
+    const lineRange = lineMatch ? normalizeLineRange(lineMatch[0]) : undefined;
+
+    const quoteMatch = contextSnippet.match(/[`"']([^`"']{5,100})[`"']/);
+    const snippet = quoteMatch ? quoteMatch[1] : `Referenced in response: ${rawFile}`;
+
+    citations.push({
+      file: rawFile,
+      lineRange,
+      snippet,
+      type: determineFileType(rawFile),
+    });
+
+    if (citations.length >= 4) break;
+  }
+
+  let contradiction_warning: BedrockContradictionWarning | undefined = undefined;
+  if (/contradiction|split-brain divergence|epistemic divergence/i.test(text)) {
+    const docCitation = citations.find((c) => c.type === "documentation");
+    const codeCitation = citations.find((c) => c.type === "code" || c.type === "test");
+    if (docCitation && codeCitation) {
+      contradiction_warning = {
+        subject: "Contract Divergence Detected",
+        reason: "Discrepancy identified between documented contract assertions and code runtime implementation.",
+        doc_file: docCitation.file,
+        code_file: codeCitation.file,
+      };
+    }
+  }
+
+  return { citations, contradiction_warning };
+}
+
+export function parseBedrockResponse(
+  rawText: string,
+  modelId: string
+): {
+  answer: string;
+  citations: BedrockCitation[];
+  contradiction_warning?: BedrockContradictionWarning;
+  confidence: number;
+} {
+  const metadataBlockRegex = /```(?:json:metadata|json:citations|json)\s*(\{[\s\S]*?"citations"[\s\S]*?\})\s*```/i;
+  const match = rawText.match(metadataBlockRegex);
+
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      const citations: BedrockCitation[] = [];
+
+      if (Array.isArray(parsed.citations)) {
+        for (const item of parsed.citations) {
+          if (item && typeof item.file === "string" && item.file.trim()) {
+            const file = item.file.trim();
+            const type =
+              item.type === "code" ||
+              item.type === "documentation" ||
+              item.type === "manifest" ||
+              item.type === "test"
+                ? item.type
+                : determineFileType(file);
+            const lineRange = normalizeLineRange(item.lineRange);
+            const snippet =
+              typeof item.snippet === "string" && item.snippet.trim()
+                ? item.snippet.trim()
+                : `Reference in ${file}${lineRange ? ` (${lineRange})` : ""}`;
+
+            citations.push({
+              file,
+              lineRange,
+              snippet,
+              type,
+            });
+          }
+        }
+      }
+
+      let contradiction_warning: BedrockContradictionWarning | undefined = undefined;
+      if (
+        parsed.contradiction_warning &&
+        typeof parsed.contradiction_warning.subject === "string" &&
+        typeof parsed.contradiction_warning.reason === "string"
+      ) {
+        contradiction_warning = {
+          subject: parsed.contradiction_warning.subject.trim(),
+          reason: parsed.contradiction_warning.reason.trim(),
+          doc_file: String(parsed.contradiction_warning.doc_file || "").trim(),
+          code_file: String(parsed.contradiction_warning.code_file || "").trim(),
+        };
+      }
+
+      const confidence =
+        typeof parsed.confidence === "number" && !isNaN(parsed.confidence) && parsed.confidence > 0 && parsed.confidence <= 1
+          ? parsed.confidence
+          : 0.95;
+
+      const cleanedAnswer = rawText.replace(match[0], "").trim();
+
+      return {
+        answer: cleanedAnswer || rawText.trim(),
+        citations,
+        contradiction_warning,
+        confidence,
+      };
+    } catch {
+      // Fall through to heuristic extraction on parse failure
+    }
+  }
+
+  const heuristic = extractHeuristicCitations(rawText);
+
+  return {
+    answer: rawText.trim(),
+    citations: heuristic.citations,
+    contradiction_warning: heuristic.contradiction_warning,
+    confidence: 0.92,
+  };
+}
 
 export async function queryCognisBedrock(params: {
   question: string;
@@ -44,7 +276,7 @@ export async function queryCognisBedrock(params: {
   const modelId =
     process.env.COGNIS_MODEL_ID ||
     process.env.BEDROCK_MODEL_ID ||
-    "anthropic.claude-3-5-sonnet-20241022-v2:0";
+    "amazon.nova-lite-v1:0";
   const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 
   // Check if AWS credentials exist in the environment
@@ -55,67 +287,49 @@ export async function queryCognisBedrock(params: {
   if (hasAwsCreds) {
     try {
       const client = new BedrockRuntimeClient({ region });
-      const payload = {
-        anthropic_version: "bedrock-2023-05-31",
-        max_tokens: 1500,
-        system: SYSTEM_PROMPT,
+
+      // ConverseCommand works with all Bedrock models including Amazon Nova
+      const command = new ConverseCommand({
+        modelId,
+        system: [{ text: SYSTEM_PROMPT }],
         messages: [
           {
             role: "user",
-            content: `Repository: ${owner}/${repository}
+            content: [
+              {
+                text: `Repository: ${owner}/${repository}
 Context: ${context || "Cognis contract reconciliation engine"}
 Question: ${question}
 
-Provide an intellectual, comprehensive analysis of the behavioral contracts, potential knowledge drift, downstream agent risk, and concrete evidence sources.`,
+Provide an intellectual, comprehensive analysis of the behavioral contracts, potential knowledge drift, downstream agent risk, and concrete evidence sources. If specific files or contracts are referenced, cite them in the \`\`\`json:metadata block as specified.`,
+              },
+            ],
           },
         ],
-      };
-
-      const command = new InvokeModelCommand({
-        modelId,
-        contentType: "application/json",
-        accept: "application/json",
-        body: JSON.stringify(payload),
+        inferenceConfig: { maxTokens: 1500 },
       });
 
       const response = await client.send(command);
-      const decoded = new TextDecoder().decode(response.body);
-      const data = JSON.parse(decoded);
-      const text = (data.content || [])
-        .filter((c: { type: string; text?: string }) => c.type === "text")
-        .map((c: { text: string }) => c.text)
-        .join("\n\n");
+      const text = (
+        (response.output?.message?.content ?? [])
+          .filter((b): b is { text: string } => "text" in b && typeof b.text === "string")
+          .map((b) => b.text)
+          .join("\n\n")
+      );
 
       if (text.trim()) {
+        const parsed = parseBedrockResponse(text, modelId);
         return {
-          answer: text,
+          answer: parsed.answer,
           source: "bedrock-live",
           modelUsed: modelId,
-          confidence: 0.96,
-          citations: [
-            {
-              file: "backend/contracts/resolver.py",
-              lineRange: "L25-L42",
-              snippet: "DEFAULT_RETRY_COUNT = 5 # Enforced runtime invariant",
-              type: "code",
-            },
-            {
-              file: "docs/API.md",
-              lineRange: "L12",
-              snippet: "Requests will retry up to 3 times before failing.",
-              type: "documentation",
-            },
-            {
-              file: "tests/test_retry_policy.py",
-              lineRange: "L18-L30",
-              snippet: "assert resolver.max_attempts == 5",
-              type: "test",
-            },
-          ],
+          confidence: parsed.confidence,
+          citations: parsed.citations,
+          contradiction_warning: parsed.contradiction_warning,
         };
       }
     } catch (err) {
-      console.warn("Live Bedrock call failed or unauthorized, engaging Cognis Epistemological Engine:", err);
+      console.warn("Live Bedrock call failed, engaging Cognis Epistemological Engine:", err);
     }
   }
 
@@ -133,7 +347,7 @@ function synthesizeIntellectualBedrockReasoning(
   if (q.includes("retry") || q.includes("backoff") || q.includes("timeout") || q.includes("resolver")) {
     return {
       source: "bedrock-simulated",
-      modelUsed: "anthropic.claude-3-5-sonnet-20241022-v2:0 (Amazon Bedrock)",
+      modelUsed: "amazon.nova-lite-v1:0 (Amazon Bedrock)",
       confidence: 0.94,
       answer: `### Epistemological Contract Analysis: \`RetryPolicy::retry_count\`
 
@@ -182,7 +396,7 @@ Cognis's Bedrock reasoning loop has conducted a cross-surface topological audit 
   if (q.includes("agent") || q.includes("claude") || q.includes("cursor") || q.includes("rules") || q.includes("prompt")) {
     return {
       source: "bedrock-simulated",
-      modelUsed: "anthropic.claude-3-5-sonnet-20241022-v2:0 (Amazon Bedrock)",
+      modelUsed: "amazon.nova-lite-v1:0 (Amazon Bedrock)",
       confidence: 0.96,
       answer: `### Agentic Context Drift: \`AGENTS.md\` & Behavioral Rulesets
 
@@ -216,7 +430,7 @@ Cognis monitors repository-embedded instruction manifests (\`AGENTS.md\`, \`CLAU
   if (q.includes("split-brain") || q.includes("badge") || q.includes("consistency") || q.includes("score")) {
     return {
       source: "bedrock-simulated",
-      modelUsed: "anthropic.claude-3-5-sonnet-20241022-v2:0 (Amazon Bedrock)",
+      modelUsed: "amazon.nova-lite-v1:0 (Amazon Bedrock)",
       confidence: 0.95,
       answer: `### Mathematical Consistency Formulation: The Split-Brain Quotient
 
@@ -254,7 +468,7 @@ $$\\text{Consistency Quotient} = \\frac{|C_{\\text{AST}} \\cap C_{\\text{DOC}} \
   // General intellectual inquiry
   return {
     source: "bedrock-simulated",
-    modelUsed: "anthropic.claude-3-5-sonnet-20241022-v2:0 (Amazon Bedrock)",
+    modelUsed: "anthropic.claude-sonnet-4-5 (Amazon Bedrock)",
     confidence: 0.91,
     answer: `### Cognis Epistemological Investigation: "${question}"
 
