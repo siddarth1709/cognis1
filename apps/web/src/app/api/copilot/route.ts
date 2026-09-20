@@ -10,6 +10,7 @@ export interface Citation {
 
 export interface CopilotResponse {
   answer: string;
+  brief_explanation: string;
   citations: Citation[];
   contradiction_warning?: {
     subject: string;
@@ -20,6 +21,19 @@ export interface CopilotResponse {
   model_used?: string;
   confidence?: number;
   source?: string;
+}
+
+function briefExplanation(answer: string): string {
+  const paragraph = answer
+    .replace(/```[\s\S]*?```/g, "")
+    .split(/\n\s*\n/)
+    .map((part) => part.replace(/^#{1,6}\s+/, "").replace(/[*`_]/g, "").trim())
+    .find((part) => part.length > 45);
+
+  if (!paragraph) {
+    return "Cognis compared the available documentation and implementation evidence, then returned the strongest supported conclusion.";
+  }
+  return paragraph.length > 300 ? `${paragraph.slice(0, 297).trim()}…` : paragraph;
 }
 
 export async function POST(request: Request) {
@@ -45,6 +59,7 @@ export async function POST(request: Request) {
 
     const responsePayload: CopilotResponse = {
       answer: result.answer,
+      brief_explanation: briefExplanation(result.answer),
       citations: result.citations,
       contradiction_warning: result.contradiction_warning,
       model_used: result.modelUsed,
@@ -55,7 +70,7 @@ export async function POST(request: Request) {
     return NextResponse.json(responsePayload);
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to process copilot query via Bedrock" },
+      { error: error instanceof Error ? error.message : "Failed to process the Cognis reasoning request" },
       { status: 500 }
     );
   }

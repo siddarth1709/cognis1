@@ -17,11 +17,11 @@ import {
 } from "@/components/ui/Icons";
 
 // ── helpers ───────────────────────────────────────────────────────────────
-const STATUS_META: Record<TransactionStatus, { label: string; color: string; bg: string }> = {
-  pending_verification: { label: "Awaiting Verification", color: "#C5A85A", bg: "#C5A85A14" },
-  verified:            { label: "Verified — Ready to Commit", color: "#E3B65A", bg: "#E3B65A14" },
-  patched:             { label: "Patched & Committed", color: "#9AA68A", bg: "#9AA68A14" },
-  rejected:            { label: "Escalated for Review", color: "#B84A3A", bg: "#B84A3A14" },
+const STATUS_META: Record<TransactionStatus, { label: string }> = {
+  pending_verification: { label: "Awaiting Verification" },
+  verified:            { label: "Verified — Ready to Commit" },
+  patched:             { label: "Patched & Committed" },
+  rejected:            { label: "Escalated for Review" },
 };
 
 function elapsed(unixSeconds: number): string {
@@ -34,11 +34,8 @@ function elapsed(unixSeconds: number): string {
 function StatusPill({ status }: { status: TransactionStatus }) {
   const m = STATUS_META[status];
   return (
-    <span
-      className="inline-flex items-center gap-1.5 font-mono-tech text-[10px] tracking-wider px-2.5 py-1 rounded-full"
-      style={{ color: m.color, background: m.bg, border: `1px solid ${m.color}30` }}
-    >
-      <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />
+    <span className={`dashboard-status-pill dashboard-status-pill--${status} inline-flex items-center gap-1.5 font-mono-tech text-[10px] tracking-wider px-2.5 py-1 rounded-full`}>
+      <span className="dashboard-status-pill__dot w-1.5 h-1.5 rounded-full" />
       {m.label}
     </span>
   );
@@ -69,7 +66,7 @@ export default function HealingPage() {
 
   if (loading || !user) {
     return (
-      <main className="min-h-screen bg-[#07070A] grid place-items-center">
+      <main className="dashboard-page min-h-screen grid place-items-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-5 h-5 border-2 border-[#D8663D] border-t-transparent rounded-full animate-spin" />
           <span className="font-mono-tech text-[11px] tracking-[.18em] text-[#5A5A6A]">LOADING…</span>
@@ -110,7 +107,7 @@ export default function HealingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07070A] text-[#F2EFE9] selection:bg-[#D8663D]/25">
+    <main className="dashboard-page dashboard-shell min-h-screen selection:bg-[#D8663D]/25">
       <MonumentalNav />
 
       <div className="max-w-[1200px] mx-auto px-4 sm:px-8 pt-[96px] pb-20">
@@ -213,13 +210,13 @@ export default function HealingPage() {
                     <div className="text-[10px] font-mono-tech uppercase tracking-wider text-[#5A5A6A] mb-3">Evidence Chain</div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
-                        { label: "Code", value: selected.plan.replace_text, color: "#D8663D" },
-                        { label: "Behavior", value: "Sandbox verified", color: "#E3B65A" },
-                        { label: "Contract", value: selected.contract_id, color: "#B84A3A" },
-                        { label: "Doc (stale)", value: selected.plan.find_text, color: "#8C887B" },
+                        { label: "Code", value: selected.plan.replace_text, tone: "code" },
+                        { label: "Behavior", value: "Sandbox verified", tone: "behavior" },
+                        { label: "Contract", value: selected.contract_id, tone: "contract" },
+                        { label: "Doc (stale)", value: selected.plan.find_text, tone: "document" },
                       ].map((item) => (
-                        <div key={item.label} className="interactive-card bg-[#080810] border border-[#18181E] rounded-lg p-3 space-y-1">
-                          <div className="text-[9px] font-mono-tech uppercase tracking-wider" style={{ color: item.color }}>
+                        <div key={item.label} className="dashboard-card dashboard-card--interactive bg-[#080810] rounded-lg p-3 space-y-1">
+                          <div className={`dashboard-evidence-label--${item.tone} text-[9px] font-mono-tech uppercase tracking-wider`}>
                             {item.label}
                           </div>
                           <div className="text-[11px] font-mono-tech text-[#A0A0B4] break-words leading-relaxed">

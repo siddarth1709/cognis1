@@ -14,6 +14,7 @@ def main() -> None:
     owner, repository, ref = request["owner"], request["repository"], request["ref"]
     autonomy_threshold = float(request.get("autonomy_threshold", 0.75))
     force_documentation = bool(request.get("force_documentation", False))
+    applied_contract_ids = {item for item in request.get("applied_contract_ids", []) if isinstance(item, str)}
 
     archive_url = f"https://codeload.github.com/{owner}/{repository}/zip/refs/heads/{ref}"
     with tempfile.TemporaryDirectory(prefix="cognis-local-") as temporary:
@@ -101,6 +102,24 @@ def main() -> None:
                 "predicate": chk.predicate,
                 "test_file": chk.test_file,
             })
+
+        # A repair accepted in the dashboard is retained for this repository/ref
+        # and should not be surfaced as a fresh unresolved proposal on the next
+        # local investigation. The underlying repository is still re-evaluated
+        # by the real AWS runtime against its current revision.
+        if applied_contract_ids:
+            transactions_data = [
+                transaction for transaction in transactions_data
+                if transaction["contract_id"] not in applied_contract_ids
+            ]
+            resolved_contracts_data = [
+                contract for contract in resolved_contracts_data
+                if contract["contract"]["contract_id"] not in applied_contract_ids
+            ]
+            resolved_retry_data = [
+                contract for contract in resolved_retry_data
+                if contract["contract"]["contract_id"] not in applied_contract_ids
+            ]
 
         print(json.dumps({
             "repo_root": str(repository_root),

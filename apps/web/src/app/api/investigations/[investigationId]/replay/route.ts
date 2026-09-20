@@ -46,7 +46,7 @@ export async function GET(
         stage: "Reason",
         timestamp: "2026-09-20T10:45:05Z",
         thought:
-          "Cognis Agent reasoning via Bedrock InvokeModel: Behavioral contradiction detected. Doc claims max retries is 3, but code enforces 5. Formulating repair hypothesis.",
+          "Cognis identified a behavioral contradiction: the documentation claims a maximum of 3 retries while the implementation enforces 5. It is now formulating a repair hypothesis.",
       },
       {
         step_index: 3,

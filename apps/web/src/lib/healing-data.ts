@@ -3,6 +3,7 @@ export type TransactionStatus = "pending_verification" | "verified" | "patched" 
 export interface HealPlanDTO { target_file: string; find_text: string; replace_text: string; rationale: string; confidence: number; operation?: "create" | "update"; }
 export interface PatchResultDTO { applied: boolean; target_file: string; diff: string | null; error: string | null; }
 export interface ResolvedContractDTO { status: "consistent" | "contradiction" | "doc_only" | "code_only" | "unresolved"; }
+export interface RegressionCheckDTO { check_id?: string; subject?: string; predicate?: string; test_file?: string; }
 export interface HealTransactionDTO {
   transaction_id: string; contract_id: string; plan: HealPlanDTO; status: TransactionStatus;
   created_at: number; verified: boolean | null; verification_detail: Record<string, unknown>; patch_result: PatchResultDTO | null;
@@ -12,7 +13,7 @@ export interface PipelineResultDTO {
   transactions?: HealTransactionDTO[];
   resolved_contracts?: ResolvedContractDTO[];
   resolved_retry_contracts?: ResolvedContractDTO[];
-  regression_checks?: unknown[];
+  regression_checks?: RegressionCheckDTO[];
   escalated?: string[];
 }
 export interface InvestigationRecordDTO {

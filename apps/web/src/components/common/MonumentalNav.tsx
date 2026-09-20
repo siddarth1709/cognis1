@@ -29,6 +29,7 @@ export function MonumentalNav() {
 
   async function handleJudgeBypass() {
     setBypassing(true);
+    window.sessionStorage.setItem("cognis:demo-welcome", "1");
     try {
       await signInWithEmail("operator@cognis.dev", "Password123!");
       router.push("/dashboard");

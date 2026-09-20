@@ -20,6 +20,7 @@ export default function SignInPage() {
 
   const handleJudgeBypass = async () => {
     setIsLoading(true);
+    window.sessionStorage.setItem("cognis:demo-welcome", "1");
     try {
       await signInWithEmail("operator@cognis.dev", "Password123!");
       router.push("/dashboard");

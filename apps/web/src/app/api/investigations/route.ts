@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       ref?: string;
       autonomy_threshold?: number;
       force_documentation?: boolean;
+      applied_contract_ids?: string[];
     };
     if (!input.owner?.trim() || !input.repository?.trim() || !input.ref?.trim()) {
       return NextResponse.json({ error: "Owner, repository, and ref are required." }, { status: 400 });
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
       ref: input.ref.trim(),
       autonomy_threshold: input.autonomy_threshold,
       force_documentation: input.force_documentation,
+      applied_contract_ids: input.applied_contract_ids,
     });
     return NextResponse.json({ investigation_id: record.investigation_id, status: record.status, mode: "local" }, { status: 202 });
   }

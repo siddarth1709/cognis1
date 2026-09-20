@@ -351,7 +351,7 @@ function synthesizeIntellectualBedrockReasoning(
       confidence: 0.94,
       answer: `### Epistemological Contract Analysis: \`RetryPolicy::retry_count\`
 
-Cognis's Bedrock reasoning loop has conducted a cross-surface topological audit across the \`${repository}\` codebase. We observe an acute **epistemic divergence** between the documented interface contract and deterministic runtime execution:
+Cognis has conducted a cross-surface topological audit across the \`${repository}\` codebase. We observe an acute **epistemic divergence** between the documented interface contract and deterministic runtime execution:
 
 1. **Deterministic AST Ground Truth**:
    In \`backend/contracts/resolver.py\` (lines 25–42), the runtime invariant enforces an upper bound of **5 retry attempts** with quadratic exponential jitter. The AST analysis of class \`RetryPolicyResolver\` binds \`MAX_RETRIES = 5\`.
@@ -406,7 +406,7 @@ Cognis monitors repository-embedded instruction manifests (\`AGENTS.md\`, \`CLAU
    When AI agents read stale prompt rules, their generated code diverges from the repository's active compilation and runtime paradigms. In this repository, Next.js 16 App Router constraints require server-action boundary segregation, whereas legacy agent manifests recommended Pages Router conventions.
 
 2. **Invariant Synchronization**:
-   Cognis's Bedrock loop continuously diffs agent directives against current dependency trees (\`package.json\`, TS AST compiler outputs). If an agent rule recommends a deprecated pattern, Cognis computes an **Entropy Quotient** and flags an invariant alert.
+   Cognis continuously diffs agent directives against current dependency trees (\`package.json\`, TS AST compiler outputs). If an agent rule recommends a deprecated pattern, Cognis computes an **Entropy Quotient** and flags an invariant alert.
 
 3. **Strategic Outcome**:
    By aligning \`AGENTS.md\` directly with active code patterns, agent hallucination frequency drops by **74%**, eliminating redundant refactoring iterations during pair-programming sessions.`,
@@ -475,12 +475,12 @@ $$\\text{Consistency Quotient} = \\frac{|C_{\\text{AST}} \\cap C_{\\text{DOC}} \
 Analyzing query topology against the behavioral contract graph of \`${owner}/${repository}\`:
 
 1. **Systemic Contract Landscape**:
-   The repository encapsulates a dual-plane architecture: an AWS serverless event pipeline (Lambda, Step Functions, DynamoDB, Bedrock) paired with a high-fidelity Next.js 16 real-time monitoring interface. 
+   The repository encapsulates a dual-plane architecture: an AWS serverless event pipeline (Lambda, Step Functions, DynamoDB, and an evidence-reasoning service) paired with a high-fidelity Next.js 16 real-time monitoring interface.
 
 2. **Knowledge Topology Analysis**:
    - **Static Graph**: AST parsers have indexed symbol declarations across \`backend/\` and \`apps/web/\`.
    - **Semantic Alignment**: The documentation surface accurately mirrors the primary architectural contracts with an evaluated epistemic consistency score of **85%**.
-   - **Active Sentinel**: The Bedrock ReAct loop continuously monitors repository pull requests, evaluating AST delta impact before code is merged to main.
+   - **Active Sentinel**: The Cognis reasoning loop continuously monitors repository pull requests, evaluating AST delta impact before code is merged to main.
 
 3. **Cognitive Recommendation**:
    Maintain automated regression tests on all public interface contracts. Ensure documentation updates accompany runtime modifications to eliminate split-brain anomalies before downstream AI coding tools absorb divergent patterns.`,

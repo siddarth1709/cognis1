@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { WarningIcon, CloseIcon, SparklesIcon, CpuIcon, DocIcon } from "@/components/ui/Icons";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { WarningIcon, CloseIcon, SparklesIcon, DocIcon } from "@/components/ui/Icons";
+import { CognisAIAvatar } from "@/components/dashboard/CognisAIAvatar";
 import type { Citation, CopilotResponse } from "@/app/api/copilot/route";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  explanation?: string;
   citations?: Citation[];
   contradiction_warning?: CopilotResponse["contradiction_warning"];
   model_used?: string;
@@ -26,6 +28,48 @@ const QUICK_PROMPTS = [
   "Verify AST code contracts against docs",
 ];
 
+function formatInline(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={index} className="rounded px-1 py-0.5">{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
+function CognisMarkdown({ content }: { content: string }) {
+  return (
+    <div className="cognis-markdown space-y-2.5 leading-relaxed">
+      {content.split("\n").map((line, index) => {
+        const heading = line.match(/^(#{1,4})\s+(.+)$/);
+        if (heading) {
+          const level = heading[1].length;
+          const classes = level === 1
+            ? "text-base font-bold"
+            : "cognis-markdown__heading--minor text-[12px] font-bold";
+          return <div key={index} className={classes}>{formatInline(heading[2])}</div>;
+        }
+
+        const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+        if (bullet) {
+          return <div key={index} className="flex gap-2"><span className="cognis-markdown__marker">•</span><span>{formatInline(bullet[1])}</span></div>;
+        }
+
+        const ordered = line.match(/^\s*(\d+)\.\s+(.+)$/);
+        if (ordered) {
+          return <div key={index} className="flex gap-2"><span className="cognis-markdown__marker">{ordered[1]}.</span><span>{formatInline(ordered[2])}</span></div>;
+        }
+
+        if (!line.trim()) return <div key={index} className="h-1" />;
+        return <p key={index}>{formatInline(line)}</p>;
+      })}
+    </div>
+  );
+}
+
 export function AskCognis({ owner = "siddarth709", repository = "cognis" }: AskCognisProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -33,12 +77,10 @@ export function AskCognis({ owner = "siddarth709", repository = "cognis" }: AskC
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: `### Cognis Epistemological Copilot Initialized
+      content: `### Cognis is ready
 
-I am **Cognis Epistemological Copilot**, powered by **Amazon Bedrock (Nova Lite)**. I conduct cross-surface topological audits to detect **knowledge divergence** between code ASTs, runtime test traces, and documentation.
-
-Ask me any architectural inquiry regarding **${owner}/${repository}**, contract invariants, or AI agent drift risks.`,
-      model_used: "amazon.nova-lite-v1:0 (Amazon Bedrock)",
+Ask about a repository contract, a documentation claim, or a possible source-of-truth conflict. Cognis will explain the evidence, practical consequence, and safest next action.`,
+      explanation: `I compare what the repository documents with what its source code and tests demonstrate for ${owner}/${repository}.`,
       confidence: 0.98,
     },
   ]);
@@ -56,13 +98,15 @@ Ask me any architectural inquiry regarding **${owner}/${repository}**, contract 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: userText, owner, repository }),
       });
-      const data = (await res.json()) as CopilotResponse;
+      const data = (await res.json()) as CopilotResponse & { error?: string };
+      if (!res.ok || !data.answer) throw new Error(data.error || "Cognis could not complete the analysis.");
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content: data.answer,
+          explanation: data.brief_explanation,
           citations: data.citations,
           contradiction_warning: data.contradiction_warning,
           model_used: data.model_used,
@@ -75,7 +119,8 @@ Ask me any architectural inquiry regarding **${owner}/${repository}**, contract 
         ...prev,
         {
           role: "assistant",
-          content: "Unable to query the Bedrock reasoning pipeline. Verify network connectivity or check AWS Bedrock credentials.",
+          content: "Cognis could not complete this analysis right now. Please retry after checking the local service configuration.",
+          explanation: "The reasoning service was unavailable, so no evidence-backed conclusion was produced.",
         },
       ]);
     } finally {
@@ -94,29 +139,28 @@ Ask me any architectural inquiry regarding **${owner}/${repository}**, contract 
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex items-center gap-2.5 bg-gradient-to-r from-[#D8663D] to-[#b8522b] hover:from-[#e0734a] hover:to-[#c45730] text-[#08080A] font-mono-tech text-xs font-bold tracking-[.14em] px-4 py-3 rounded-xl shadow-2xl transition-all active:scale-95 border border-[#F2A27A]/30"
+          className="cognis-copilot-launcher cognis-companion-launcher dashboard-button flex items-center gap-2.5 font-mono-tech font-bold"
         >
-          <SparklesIcon size={14} className="text-[#08080A]" />
-          <span>ASK COGNIS (BEDROCK AI)</span>
-          <span className="w-2 h-2 rounded-full bg-[#08080A] animate-pulse ml-0.5" />
+          <CognisAIAvatar variant="companion" interactive label="Cognis Dev Companion" />
+          <span className="cognis-companion-launcher__copy">
+            <span className="cognis-companion-launcher__eyebrow">DEV COMPANION</span>
+            <span className="text-xs tracking-[.14em]">ASK COGNIS</span>
+          </span>
+          <span className="dashboard-status-live w-2 h-2 rounded-full bg-[#080806] ml-0.5" />
         </button>
       ) : (
-        <div className="w-[380px] sm:w-[480px] h-[560px] max-h-[85vh] bg-[#0A0A0F] border border-[#26263A] rounded-2xl shadow-2xl flex flex-col font-mono-tech text-xs text-[#F2EFE9] overflow-hidden anim-fade-in-up">
+        <div className="cognis-copilot-frame">
+        <div className="cognis-copilot-panel w-[min(480px,calc(100vw-2.5rem))] h-[560px] max-h-[85vh] rounded-2xl flex flex-col font-mono-tech text-xs overflow-hidden anim-fade-in-up">
           {/* Header */}
-          <div className="p-4 bg-[#0F0F18] border-b border-[#1E1E2E] flex items-center justify-between">
+          <div className="cognis-copilot-header p-4 border-b flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-[#D8663D]/15 border border-[#D8663D]/40 flex items-center justify-center text-[#D8663D]">
-                <CpuIcon size={14} />
-              </div>
+              <CognisAIAvatar size="sm" interactive />
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-bold tracking-[.14em] text-[#F2EFE9] text-xs">COGNIS INTELLECT</span>
-                  <span className="text-[9px] bg-[#9AA68A]/20 text-[#9AA68A] border border-[#9AA68A]/40 px-1.5 py-0.2 rounded font-bold">
-                    BEDROCK
-                  </span>
                 </div>
                 <div className="text-[10px] text-[#6A6A80] tracking-wider truncate max-w-[260px]">
-                  Claude 3.5 Sonnet · Epistemological Engine
+                  Evidence-led repository reasoning
                 </div>
               </div>
             </div>
@@ -124,7 +168,7 @@ Ask me any architectural inquiry regarding **${owner}/${repository}**, contract 
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="text-[#8A8A9E] hover:text-[#F2EFE9] p-1.5 rounded-lg hover:bg-[#1A1A28] transition-colors"
+              className="dashboard-icon-button p-1.5 rounded-lg"
             >
               <CloseIcon size={15} />
             </button>
@@ -140,27 +184,20 @@ Ask me any architectural inquiry regarding **${owner}/${repository}**, contract 
                 <div
                   className={`max-w-[94%] p-3.5 rounded-xl border ${
                     msg.role === "user"
-                      ? "bg-[#D8663D]/12 border-[#D8663D]/30 text-[#F2EFE9]"
-                      : "bg-[#11111B] border-[#1F1F30] text-[#D0D0E0]"
+                      ? "cognis-copilot-message--user"
+                      : "cognis-copilot-message--assistant"
                   }`}
                 >
-                  {/* Model Telemetry Banner */}
-                  {msg.role === "assistant" && msg.model_used && (
-                    <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-[#1E1E2E] text-[9px] text-[#6A6A80]">
-                      <span className="flex items-center gap-1 text-[#9AA68A]">
-                        <SparklesIcon size={10} />
-                        {msg.model_used.split(" ")[0]}
-                      </span>
-                      {msg.confidence && (
-                        <span>Confidence: {Math.round(msg.confidence * 100)}%</span>
-                      )}
+                  {msg.role === "assistant" && msg.explanation && (
+                    <div className="cognis-copilot-brief mb-3 p-2.5 border rounded-lg">
+                      <span className="text-[9px] tracking-wider text-[#9AA68A] font-bold block mb-1">IN BRIEF</span>
+                      <p className="text-[10px] text-[#C4C4D4] leading-relaxed">{msg.explanation}</p>
+                      {msg.confidence && <span className="text-[9px] text-[#6A6A80] block mt-1.5">Evidence confidence: {Math.round(msg.confidence * 100)}%</span>}
                     </div>
                   )}
 
                   {/* Body Text */}
-                  <div className="leading-relaxed whitespace-pre-wrap space-y-2">
-                    {msg.content}
-                  </div>
+                  <CognisMarkdown content={msg.content} />
 
                   {/* Contradiction Warning Badge */}
                   {msg.contradiction_warning && (
@@ -213,20 +250,20 @@ Ask me any architectural inquiry regarding **${owner}/${repository}**, contract 
             {loading && (
               <div className="p-3 bg-[#11111B] border border-[#1F1F30] rounded-xl flex items-center gap-2.5 text-[11px] text-[#D8663D] animate-pulse">
                 <SparklesIcon size={14} className="animate-spin" />
-                <span>Invoking Bedrock reasoning loop & AST evidence synthesis…</span>
+                <span>Reviewing evidence surfaces and synthesizing an explanation…</span>
               </div>
             )}
           </div>
 
           {/* Quick Prompt Chips */}
-          <div className="px-3 py-2 bg-[#0C0C14] border-t border-[#1A1A28] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          <div className="cognis-copilot-prompts px-3 py-2 border-t flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {QUICK_PROMPTS.map((prompt, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => void sendQuery(prompt)}
                 disabled={loading}
-                className="shrink-0 text-[9px] bg-[#141420] hover:bg-[#1E1E2E] text-[#9A9AB0] hover:text-[#F2EFE9] border border-[#252535] px-2.5 py-1 rounded-md transition-colors"
+                className="dashboard-chip shrink-0 text-[9px] px-2.5 py-1 rounded-md"
               >
                 {prompt}
               </button>
@@ -234,22 +271,23 @@ Ask me any architectural inquiry regarding **${owner}/${repository}**, contract 
           </div>
 
           {/* Input form */}
-          <form onSubmit={handleSend} className="p-3 bg-[#0E0E16] border-t border-[#1E1E2E] flex gap-2">
+          <form onSubmit={handleSend} className="cognis-copilot-footer p-3 border-t flex gap-2">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask Bedrock about AST contracts, retry divergence, drift..."
-              className="flex-1 bg-[#07070C] border border-[#202030] rounded-lg px-3 py-2 text-[11px] text-[#F2EFE9] focus:outline-none focus:border-[#D8663D] placeholder-[#4A4A60]"
+              placeholder="Ask about contracts, documentation drift, or repository behavior..."
+              className="dashboard-input flex-1 px-3 py-2 text-[11px] focus:outline-none"
             />
             <button
               type="submit"
               disabled={loading || !query.trim()}
-              className="bg-[#D8663D] hover:bg-[#c45730] text-[#08080A] font-bold text-[10px] px-4 py-2 rounded-lg disabled:opacity-40 transition-all font-mono-tech active:scale-95 shadow-lg"
+              className="dashboard-button dashboard-button--primary font-bold text-[10px] px-4 py-2 rounded-lg disabled:opacity-40 font-mono-tech"
             >
               TRANSMIT
             </button>
           </form>
+        </div>
         </div>
       )}
     </div>

@@ -49,8 +49,47 @@ export function getLocalInvestigation(id: string) {
   return readRecords().find((record) => record.investigation_id === id) || null;
 }
 
-function generateServerlessPipelineResult(input: { owner: string; repository: string; ref: string }): PipelineResultDTO {
+function generateServerlessPipelineResult(input: { owner: string; repository: string; ref: string; applied_contract_ids?: string[] }): PipelineResultDTO {
   const isDemo = input.repository === "cognis" || input.repository === "cognis1" || input.owner === "siddarth709" || input.owner === "siddarth1709";
+
+  const applied = new Set(input.applied_contract_ids ?? []);
+  const transactions = [
+    {
+      transaction_id: `tx-retry-${Date.now().toString(36)}`,
+      contract_id: "RetryPolicy::retry_count",
+      plan: {
+        target_file: "docs/API.md",
+        find_text: "Requests will retry 2 times before failing",
+        replace_text: "Requests will retry 5 times before failing",
+        rationale: `Align ${input.repository} documentation with actual code implementation in resolver.py (enforcing MAX_RETRIES = 5)`,
+        confidence: 0.94,
+        operation: "update" as const,
+      },
+      status: "verified" as TransactionStatus,
+      created_at: Math.floor(Date.now() / 1000),
+      verified: true,
+      verification_detail: { investigation_method: "CognisEvidenceReasoning", confidence: 0.94, summary: `Verified behavioral drift in ${input.owner}/${input.repository}: doc retry count claims 2, code AST enforces 5.` },
+      patch_result: { applied: false, target_file: "docs/API.md", diff: "--- docs/API.md\n+++ docs/API.md\n@@ -11,3 +11,3 @@\n-Requests will retry 2 times before failing\n+Requests will retry 5 times before failing", error: null },
+    },
+    {
+      transaction_id: `tx-auth-${Date.now().toString(36)}`,
+      contract_id: "Authentication::header_format",
+      plan: { target_file: "docs/API.md", find_text: "Authorization: Token", replace_text: "Authorization: Bearer", rationale: `Reconcile header auth schema: Next.js middleware and API routes enforce 'Bearer <token>', not legacy 'Token'`, confidence: 0.96, operation: "update" as const },
+      status: "verified" as TransactionStatus,
+      created_at: Math.floor(Date.now() / 1000), verified: true,
+      verification_detail: { investigation_method: "CognisEvidenceReasoning", confidence: 0.96, summary: `Verified auth contract drift in ${input.owner}/${input.repository}: docs specify legacy 'Token' header prefix instead of 'Bearer'.` },
+      patch_result: { applied: false, target_file: "docs/API.md", diff: "--- docs/API.md\n+++ docs/API.md\n@@ -35,3 +35,3 @@\n-Authorization: Token\n+Authorization: Bearer", error: null },
+    },
+    {
+      transaction_id: `tx-timeout-${Date.now().toString(36)}`,
+      contract_id: "TimeoutPolicy::gateway_timeout",
+      plan: { target_file: "docs/API.md", find_text: "strict 60 seconds gateway timeout", replace_text: "strict 15 seconds gateway timeout", rationale: `Sync SLA timeout ceiling: AWS Lambda and serverless functions configure a 15-second execution ceiling`, confidence: 0.91, operation: "update" as const },
+      status: "verified" as TransactionStatus,
+      created_at: Math.floor(Date.now() / 1000), verified: true,
+      verification_detail: { investigation_method: "CognisEvidenceReasoning", confidence: 0.91, summary: `Verified gateway SLA drift in ${input.owner}/${input.repository}: doc claims 60s, infra imposes 15s limit.` },
+      patch_result: { applied: false, target_file: "docs/API.md", diff: "--- docs/API.md\n+++ docs/API.md\n@@ -21,3 +21,3 @@\n-strict 60 seconds gateway timeout\n+strict 15 seconds gateway timeout", error: null },
+    },
+  ].filter((transaction) => !applied.has(transaction.contract_id));
 
   return {
     resolved_contracts: [
@@ -63,88 +102,9 @@ function generateServerlessPipelineResult(input: { owner: string; repository: st
       { status: "consistent" as const },
     ],
     resolved_retry_contracts: [
-      { status: "contradiction" as const },
+      { status: applied.has("RetryPolicy::retry_count") ? "consistent" as const : "contradiction" as const },
     ],
-    transactions: [
-      {
-        transaction_id: `tx-retry-${Date.now().toString(36)}`,
-        contract_id: "RetryPolicy::retry_count",
-        plan: {
-          target_file: "docs/API.md",
-          find_text: "Requests will retry 2 times before failing",
-          replace_text: "Requests will retry 5 times before failing",
-          rationale: `Align ${input.repository} documentation with actual code implementation in resolver.py (enforcing MAX_RETRIES = 5)`,
-          confidence: 0.94,
-          operation: "update" as const,
-        },
-        status: "verified" as TransactionStatus,
-        created_at: Math.floor(Date.now() / 1000),
-        verified: true,
-        verification_detail: {
-          investigation_method: "BedrockAgentLoop",
-          confidence: 0.94,
-          summary: `Verified behavioral drift in ${input.owner}/${input.repository}: doc retry count claims 2, code AST enforces 5.`,
-        },
-        patch_result: {
-          applied: false,
-          target_file: "docs/API.md",
-          diff: "--- docs/API.md\n+++ docs/API.md\n@@ -11,3 +11,3 @@\n-Requests will retry 2 times before failing\n+Requests will retry 5 times before failing",
-          error: null,
-        },
-      },
-      {
-        transaction_id: `tx-auth-${Date.now().toString(36)}`,
-        contract_id: "Authentication::header_format",
-        plan: {
-          target_file: "docs/API.md",
-          find_text: "Authorization: Token",
-          replace_text: "Authorization: Bearer",
-          rationale: `Reconcile header auth schema: Next.js middleware and API routes enforce 'Bearer <token>', not legacy 'Token'`,
-          confidence: 0.96,
-          operation: "update" as const,
-        },
-        status: "verified" as TransactionStatus,
-        created_at: Math.floor(Date.now() / 1000),
-        verified: true,
-        verification_detail: {
-          investigation_method: "BedrockAgentLoop",
-          confidence: 0.96,
-          summary: `Verified auth contract drift in ${input.owner}/${input.repository}: docs specify legacy 'Token' header prefix instead of 'Bearer'.`,
-        },
-        patch_result: {
-          applied: false,
-          target_file: "docs/API.md",
-          diff: "--- docs/API.md\n+++ docs/API.md\n@@ -35,3 +35,3 @@\n-Authorization: Token\n+Authorization: Bearer",
-          error: null,
-        },
-      },
-      {
-        transaction_id: `tx-timeout-${Date.now().toString(36)}`,
-        contract_id: "TimeoutPolicy::gateway_timeout",
-        plan: {
-          target_file: "docs/API.md",
-          find_text: "strict 60 seconds gateway timeout",
-          replace_text: "strict 15 seconds gateway timeout",
-          rationale: `Sync SLA timeout ceiling: AWS Lambda and serverless functions configure a 15-second execution ceiling`,
-          confidence: 0.91,
-          operation: "update" as const,
-        },
-        status: "verified" as TransactionStatus,
-        created_at: Math.floor(Date.now() / 1000),
-        verified: true,
-        verification_detail: {
-          investigation_method: "BedrockAgentLoop",
-          confidence: 0.91,
-          summary: `Verified gateway SLA drift in ${input.owner}/${input.repository}: doc claims 60s, infra imposes 15s limit.`,
-        },
-        patch_result: {
-          applied: false,
-          target_file: "docs/API.md",
-          diff: "--- docs/API.md\n+++ docs/API.md\n@@ -21,3 +21,3 @@\n-strict 60 seconds gateway timeout\n+strict 15 seconds gateway timeout",
-          error: null,
-        },
-      },
-    ],
+    transactions,
     regression_checks: [
       {
         check_id: "chk_retry_policy_val",
@@ -175,6 +135,7 @@ export function startLocalInvestigation(input: {
   ref: string;
   autonomy_threshold?: number;
   force_documentation?: boolean;
+  applied_contract_ids?: string[];
 }) {
   const investigation_id = randomUUID();
   const record: LocalRecord = {
