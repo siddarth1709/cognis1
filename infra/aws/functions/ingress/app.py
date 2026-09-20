@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import json
 import os
+import time
 import uuid
 
 import boto3
 
 
 sfn = boto3.client("stepfunctions")
+dynamodb = boto3.resource("dynamodb")
 STATE_MACHINE_ARN = os.environ["STATE_MACHINE_ARN"]
+TABLE_NAME = os.environ["INVESTIGATIONS_TABLE"]
 
 
 def _response(status_code: int, body: dict) -> dict:
@@ -31,6 +35,13 @@ def _body(event: dict) -> dict:
     return json.loads(raw)
 
 
+def _authorized(event: dict) -> bool:
+    headers = event.get("headers") or {}
+    supplied = next((str(value) for key, value in headers.items() if str(key).lower() == "x-cognis-api-key"), "")
+    expected = os.environ.get("COGNIS_API_KEY", "")
+    return bool(expected) and hmac.compare_digest(supplied, expected)
+
+
 def _validate(payload: dict) -> None:
     for field in ("owner", "repository", "ref"):
         if not isinstance(payload.get(field), str) or not payload[field].strip():
@@ -41,9 +52,14 @@ def _validate(payload: dict) -> None:
         threshold = float(threshold)
         if not 0 <= threshold <= 1:
             raise ValueError("autonomy_threshold must be between 0 and 1")
+    if "force_documentation" in payload and not isinstance(payload["force_documentation"], bool):
+        raise ValueError("force_documentation must be a boolean")
 
 
 def handler(event, context):
+    if not _authorized(event):
+        return _response(401, {"error": "Unauthorized"})
+
     try:
         payload = _body(event)
         _validate(payload)
@@ -60,12 +76,24 @@ def handler(event, context):
             "autonomy_threshold",
             float(os.environ.get("DEFAULT_AUTONOMY_THRESHOLD", "0.75")),
         ),
+        "force_documentation": payload.get("force_documentation", False),
     }
 
     execution = sfn.start_execution(
         stateMachineArn=STATE_MACHINE_ARN,
         name=investigation_id,
         input=json.dumps(input_payload),
+    )
+
+    dynamodb.Table(TABLE_NAME).put_item(
+        Item={
+            "investigation_id": investigation_id,
+            "status": "RUNNING",
+            "repository": input_payload["repository"],
+            "owner": input_payload["owner"],
+            "ref": input_payload["ref"],
+            "created_at": int(time.time()),
+        }
     )
 
     return _response(

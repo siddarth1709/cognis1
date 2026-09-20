@@ -7,7 +7,7 @@ Description: >-
 Parameters:
   CognisModelId:
     Type: String
-    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+    Default: anthropic.claude-sonnet-4-6
     Description: Bedrock model or inference profile ID enabled in this AWS account/region.
 
   CognisAutonomyThreshold:
@@ -16,6 +16,12 @@ Parameters:
     MinValue: 0
     MaxValue: 1
     Description: Default confidence threshold passed to the existing Cognis orchestrator.
+
+  CognisApiKey:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Server-to-server key required by the Cognis dashboard when calling this API.
 
 Globals:
   Function:
@@ -28,6 +34,7 @@ Globals:
       Variables:
         COGNIS_MODEL_ID: !Ref CognisModelId
         DEFAULT_AUTONOMY_THRESHOLD: !Ref CognisAutonomyThreshold
+        COGNIS_API_KEY: !Ref CognisApiKey
 
 Resources:
   ArtifactBucket:
@@ -202,6 +209,8 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref InvestigationsTable
+        - S3ReadPolicy:
+            BucketName: !Ref ArtifactBucket
       Environment:
         Variables:
           INVESTIGATIONS_TABLE: !Ref InvestigationsTable
@@ -252,9 +261,12 @@ Resources:
               Action:
                 - states:StartExecution
               Resource: !Ref InvestigationStateMachine
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvestigationsTable
       Environment:
         Variables:
           STATE_MACHINE_ARN: !Ref InvestigationStateMachine
+          INVESTIGATIONS_TABLE: !Ref InvestigationsTable
           DEFAULT_AUTONOMY_THRESHOLD: !Ref CognisAutonomyThreshold
       Events:
         StartInvestigation:
@@ -275,6 +287,8 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref InvestigationsTable
+        - S3ReadPolicy:
+            BucketName: !Ref ArtifactBucket
       Environment:
         Variables:
           INVESTIGATIONS_TABLE: !Ref InvestigationsTable

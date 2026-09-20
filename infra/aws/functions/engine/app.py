@@ -112,6 +112,7 @@ def handler(event, context):
             repo_name=repository,
             autonomy_threshold=threshold,
             apply_patches=True,
+            force_documentation=bool(event.get("force_documentation", False)),
         )
 
         result_json = _jsonable(result)

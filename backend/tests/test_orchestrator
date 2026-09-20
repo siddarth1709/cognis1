@@ -74,10 +74,53 @@ def test_low_confidence_escalates_instead_of_patching(tmp_path):
     assert "3 times" in (tmp_path / "README.md").read_text(encoding="utf-8")
 
 
+def test_pipeline_creates_a_reviewable_baseline_when_docs_are_missing(tmp_path):
+    (tmp_path / "openapi.json").write_text(
+        '{"openapi":"3.0.0","paths":{"/health":{"get":{"summary":"Health check"}}}}',
+        encoding="utf-8",
+    )
+
+    result = run_pipeline(
+        repo_root=tmp_path,
+        repo_name="demo/undocumented",
+        model_client=FakeModelClient([]),
+        apply_patches=True,
+    )
+
+    assert len(result.transactions) == 1
+    tx = result.transactions[0]
+    assert tx.plan.operation == "create"
+    assert tx.status == "patched"
+    generated = tmp_path / "docs" / "COGNIS_GENERATED.md"
+    assert generated.exists()
+    assert "Generated repository reference" in generated.read_text(encoding="utf-8")
+
+
+def test_pipeline_can_explicitly_generate_documentation_for_an_existing_repo(tmp_path):
+    (tmp_path / "README.md").write_text("Existing overview.\n", encoding="utf-8")
+    (tmp_path / "service.py").write_text("def healthcheck():\n    return {'status': 'ok'}\n", encoding="utf-8")
+
+    result = run_pipeline(
+        repo_root=tmp_path,
+        repo_name="demo/explicit-generation",
+        model_client=FakeModelClient([]),
+        apply_patches=True,
+        force_documentation=True,
+    )
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].plan.operation == "create"
+    assert (tmp_path / "docs" / "COGNIS_GENERATED.md").exists()
+
+
 if __name__ == "__main__":
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         test_full_pipeline_heals_a_real_repo_on_disk(Path(d))
     with tempfile.TemporaryDirectory() as d:
         test_low_confidence_escalates_instead_of_patching(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        test_pipeline_creates_a_reviewable_baseline_when_docs_are_missing(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        test_pipeline_can_explicitly_generate_documentation_for_an_existing_repo(Path(d))
     print("All orchestrator tests passed.")

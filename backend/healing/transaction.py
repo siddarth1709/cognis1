@@ -35,6 +35,7 @@ class HealTransaction:
                 "replace_text": self.plan.replace_text,
                 "rationale": self.plan.rationale,
                 "confidence": self.plan.confidence,
+                "operation": self.plan.operation,
             },
             "status": self.status,
             "created_at": self.created_at,

@@ -54,6 +54,10 @@ sam build
 sam deploy
 ```
 
+When prompted, supply a unique `CognisApiKey` (at least 32 characters). Set the same value as
+the server-only `COGNIS_API_KEY` in the Next.js host. The dashboard proxies that key to AWS;
+do not expose it with a `NEXT_PUBLIC_` prefix.
+
 ## GitHub repositories
 
 The Observe function downloads a public GitHub branch archive. Private repositories are deliberately
