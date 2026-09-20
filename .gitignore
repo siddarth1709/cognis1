@@ -56,3 +56,4 @@ venv/
 
 # aws sam
 .aws-sam/
+infra/aws/samconfig.toml

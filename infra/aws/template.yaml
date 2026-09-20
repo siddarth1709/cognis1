@@ -23,6 +23,15 @@ Parameters:
     MinLength: 32
     Description: Server-to-server key required by the Cognis dashboard when calling this API.
 
+  EnableCloudFront:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Create the CloudFront live-document distribution. Keep false until AWS enables CloudFront for this account.
+
+Conditions:
+  CreateCloudFront: !Equals [!Ref EnableCloudFront, "true"]
+
 Globals:
   Function:
     Architectures:
@@ -76,6 +85,7 @@ Resources:
 
   PublishedDocsOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
+    Condition: CreateCloudFront
     Properties:
       OriginAccessControlConfig:
         Name: !Sub cognis-published-docs-${AWS::StackName}
@@ -86,6 +96,7 @@ Resources:
 
   PublishedDocsDistribution:
     Type: AWS::CloudFront::Distribution
+    Condition: CreateCloudFront
     Properties:
       DistributionConfig:
         Enabled: true
@@ -106,6 +117,7 @@ Resources:
 
   PublishedDocsBucketPolicy:
     Type: AWS::S3::BucketPolicy
+    Condition: CreateCloudFront
     Properties:
       Bucket: !Ref PublishedDocsBucket
       PolicyDocument:
@@ -294,7 +306,7 @@ Resources:
           INVESTIGATIONS_TABLE: !Ref InvestigationsTable
           PUBLISHED_DOCUMENTS_TABLE: !Ref PublishedDocumentsTable
           PUBLISHED_DOCS_BUCKET: !Ref PublishedDocsBucket
-          PUBLISHED_DOCS_CLOUDFRONT_URL: !Sub https://${PublishedDocsDistribution.DomainName}
+          PUBLISHED_DOCS_CLOUDFRONT_URL: !If [CreateCloudFront, !Sub "https://${PublishedDocsDistribution.DomainName}", ""]
 
   StatusFunction:
     Type: AWS::Serverless::Function
@@ -311,7 +323,7 @@ Resources:
       Environment:
         Variables:
           INVESTIGATIONS_TABLE: !Ref InvestigationsTable
-          PUBLISHED_DOCS_CLOUDFRONT_URL: !Sub https://${PublishedDocsDistribution.DomainName}
+          PUBLISHED_DOCS_CLOUDFRONT_URL: !If [CreateCloudFront, !Sub "https://${PublishedDocsDistribution.DomainName}", ""]
 
   InvestigationStateMachine:
     Type: AWS::Serverless::StateMachine
@@ -390,7 +402,7 @@ Resources:
       Environment:
         Variables:
           INVESTIGATIONS_TABLE: !Ref InvestigationsTable
-          PUBLISHED_DOCS_CLOUDFRONT_URL: !Sub https://${PublishedDocsDistribution.DomainName}
+          PUBLISHED_DOCS_CLOUDFRONT_URL: !If [CreateCloudFront, !Sub "https://${PublishedDocsDistribution.DomainName}", ""]
       Events:
         GetInvestigation:
           Type: HttpApi
@@ -425,5 +437,5 @@ Outputs:
     Value: !Ref PublishedDocsBucket
 
   PublishedDocumentsUrl:
-    Description: CloudFront base URL for Cognis live documents.
-    Value: !Sub https://${PublishedDocsDistribution.DomainName}
+    Description: CloudFront base URL for Cognis live documents; empty until EnableCloudFront is true.
+    Value: !If [CreateCloudFront, !Sub "https://${PublishedDocsDistribution.DomainName}", ""]

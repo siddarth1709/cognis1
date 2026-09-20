@@ -6,4 +6,4 @@ resolve_s3 = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 region = "ap-south-1"
-parameter_overrides = "CognisModelId=anthropic.claude-sonnet-4-6 CognisAutonomyThreshold=0.75"
+parameter_overrides = "CognisModelId=anthropic.claude-sonnet-4-6 CognisAutonomyThreshold=0.75 EnableCloudFront=false"

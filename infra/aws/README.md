@@ -67,6 +67,14 @@ The document itself is stored in a separate private S3 bucket; CloudFront is the
 principal allowed to read that bucket. The investigation result carries the resulting
 CloudFront URL, and the Case Files screen exposes it as **Open verified live doc**.
 
+### Deploy before CloudFront account verification
+
+If AWS has not yet enabled CloudFront for the account, deploy with
+`EnableCloudFront=false` (the default). Cognis will still create and index verified
+documents in private S3 and DynamoDB, but it will not expose a live-document URL.
+After AWS verifies the account, update the same stack with `EnableCloudFront=true` to
+add the distribution and origin access control without replacing the backend services.
+
 ## GitHub repositories
 
 The Observe function downloads a public GitHub branch archive. Private repositories are deliberately

@@ -18,7 +18,7 @@ def _cf_constructor(loader, node):
     return loader.construct_mapping(node)
 
 
-for _tag in ("!Ref", "!Sub", "!GetAtt", "!Join", "!If", "!Select"):
+for _tag in ("!Ref", "!Sub", "!GetAtt", "!Join", "!If", "!Select", "!Equals"):
     CloudFormationLoader.add_constructor(_tag, _cf_constructor)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,8 +56,11 @@ def test_live_docs_use_a_private_s3_origin_and_cloudfront():
     template = yaml.load((ROOT / "template.yaml").read_text(), Loader=CloudFormationLoader)
     resources = template["Resources"]
 
+    assert template["Parameters"]["EnableCloudFront"]["Default"] == "false"
+    assert template["Conditions"]["CreateCloudFront"]
     assert resources["PublishedDocsBucket"]["Properties"]["PublicAccessBlockConfiguration"]["RestrictPublicBuckets"] is True
     assert resources["PublishedDocsDistribution"]["Type"] == "AWS::CloudFront::Distribution"
+    assert resources["PublishedDocsDistribution"]["Condition"] == "CreateCloudFront"
     assert resources["PublishedDocumentsTable"]["Properties"]["GlobalSecondaryIndexes"][0]["IndexName"] == "repository-published-at"
     persist = resources["PersistFunction"]["Properties"]
     assert persist["Environment"]["Variables"]["PUBLISHED_DOCUMENTS_TABLE"] == "PublishedDocumentsTable"
