@@ -17,11 +17,23 @@ export async function POST(request: Request) {
   }
 
   if (!runtimeUrl) {
-    const input = payload as { owner?: string; repository?: string; ref?: string };
+    const input = payload as {
+      owner?: string;
+      repository?: string;
+      ref?: string;
+      autonomy_threshold?: number;
+      force_documentation?: boolean;
+    };
     if (!input.owner?.trim() || !input.repository?.trim() || !input.ref?.trim()) {
       return NextResponse.json({ error: "Owner, repository, and ref are required." }, { status: 400 });
     }
-    const record = startLocalInvestigation({ owner: input.owner.trim(), repository: input.repository.trim(), ref: input.ref.trim() });
+    const record = startLocalInvestigation({
+      owner: input.owner.trim(),
+      repository: input.repository.trim(),
+      ref: input.ref.trim(),
+      autonomy_threshold: input.autonomy_threshold,
+      force_documentation: input.force_documentation,
+    });
     return NextResponse.json({ investigation_id: record.investigation_id, status: record.status, mode: "local" }, { status: 202 });
   }
 

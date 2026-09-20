@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { IndustrialLogo } from "@/components/ui/IndustrialLogo";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
+import { ScaleIcon, CloseIcon, CheckIcon } from "@/components/ui/Icons";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -16,6 +17,18 @@ export default function SignInPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleJudgeBypass = async () => {
+    setIsLoading(true);
+    try {
+      await signInWithEmail("operator@cognis.dev", "Password123!");
+      router.push("/dashboard");
+    } catch {
+      router.push("/dashboard");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,6 +101,17 @@ export default function SignInPage() {
           Authenticate into your verified behavioral telemetry workspace.
         </p>
 
+        {/* JUDGE DEMO BYPASS BUTTON FOR HACKATHON EVALUATION */}
+        <button
+          type="button"
+          onClick={handleJudgeBypass}
+          disabled={isLoading}
+          className="w-full mb-6 py-3.5 px-4 bg-[#D8663D] hover:bg-[#c45730] text-[#080806] font-mono-tech font-bold text-[11px] tracking-[.14em] uppercase transition-all shadow-xl flex items-center justify-center gap-2"
+        >
+          <ScaleIcon size={14} />
+          <span>JUDGE DEMO BYPASS → INSTANT DEMO WORKSPACE</span>
+        </button>
+
         {/* Real OAuth Buttons: Google, GitHub, Apple */}
         <OAuthButtons mode="sign-in" onError={setErrorMsg} />
 
@@ -102,14 +126,14 @@ export default function SignInPage() {
         {/* Status Notifications */}
         {errorMsg && (
           <div className="p-3 mb-4 border border-[#B84A3A] bg-[#B84A3A]/10 rounded-[2px] text-[11px] font-mono-tech text-[#F2EFE9] flex items-start gap-2 leading-tight">
-            <span className="text-[#B84A3A] shrink-0 font-bold">✕</span>
+            <CloseIcon size={11} className="text-[#B84A3A] shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {successMsg && (
           <div className="p-3 mb-4 border border-[#9AA68A] bg-[#9AA68A]/10 rounded-[2px] text-[11px] font-mono-tech text-[#9AA68A] flex items-start gap-2 leading-tight">
-            <span className="shrink-0 font-bold">✓</span>
+            <CheckIcon size={11} className="shrink-0" />
             <span>{successMsg}</span>
           </div>
         )}
@@ -124,7 +148,7 @@ export default function SignInPage() {
             <input
               type="email"
               required
-              placeholder="developer@organization.internal"
+              placeholder="operator@cognis.dev"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="input-monumental"
@@ -187,7 +211,7 @@ export default function SignInPage() {
       <footer className="w-full max-w-[1280px] mx-auto pt-6 border-t border-[#1C1C17] flex flex-wrap items-center justify-between gap-4 text-[9px] sm:text-[10px] font-mono-tech text-[#66655E] tracking-[0.16em]">
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-[#D8663D]" />
-          <span>SECURE INVARIANT GATEWAY // FIREBASE AUTH // TLS 1.3</span>
+          <span>SECURE INVARIANT GATEWAY // DEMO BYPASS READY</span>
         </div>
         <span>SESSION LATENCY: 0.04ms</span>
       </footer>

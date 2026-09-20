@@ -14,9 +14,17 @@ export interface StoredUser {
 const DATA_DIR = path.join(process.cwd(), ".data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 
-// Default demo user seeded for instant verification
+// Default demo users seeded for instant verification
 const DEFAULT_DEMO_PASSWORD_HASH = bcrypt.hashSync("Password123!", 10);
 const DEFAULT_USERS: StoredUser[] = [
+  {
+    id: "usr_cognis_operator_001",
+    name: "Cognis Operator",
+    email: "operator@cognis.dev",
+    passwordHash: DEFAULT_DEMO_PASSWORD_HASH,
+    provider: "credentials",
+    createdAt: new Date().toISOString(),
+  },
   {
     id: "usr_cognis_admin_001",
     name: "Core Invariant Admin",
@@ -37,7 +45,14 @@ function ensureStorage(): StoredUser[] {
       return DEFAULT_USERS;
     }
     const content = fs.readFileSync(USERS_FILE, "utf-8");
-    return JSON.parse(content);
+    const parsed = JSON.parse(content) as StoredUser[];
+
+    // Ensure operator@cognis.dev exists even if users.json was created earlier
+    if (!parsed.some((u) => u.email.toLowerCase() === "operator@cognis.dev")) {
+      parsed.unshift(DEFAULT_USERS[0]);
+      fs.writeFileSync(USERS_FILE, JSON.stringify(parsed, null, 2), "utf-8");
+    }
+    return parsed;
   } catch {
     return DEFAULT_USERS;
   }
