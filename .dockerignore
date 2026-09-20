@@ -1,0 +1,44 @@
+# Node
+node_modules/
+**/node_modules/
+
+# Next.js
+.next/
+**/.next/
+
+# Build artifacts
+.aws-sam/
+dist/
+build/
+coverage/
+
+# Git
+.git/
+.gitignore
+
+# Python caches
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Local secrets
+.env
+.env.*
+!**/.env.example
+
+# Documentation / development artifacts
+*.log

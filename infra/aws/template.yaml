@@ -1,0 +1,308 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  Cognis AWS runtime: API Gateway -> Lambda -> Step Functions -> repository
+  observation -> existing Cognis backend -> persistence.
+
+Parameters:
+  CognisModelId:
+    Type: String
+    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+    Description: Bedrock model or inference profile ID enabled in this AWS account/region.
+
+  CognisAutonomyThreshold:
+    Type: Number
+    Default: 0.75
+    MinValue: 0
+    MaxValue: 1
+    Description: Default confidence threshold passed to the existing Cognis orchestrator.
+
+Globals:
+  Function:
+    Architectures:
+      - arm64
+    MemorySize: 512
+    Timeout: 60
+    Tracing: Active
+    Environment:
+      Variables:
+        COGNIS_MODEL_ID: !Ref CognisModelId
+        DEFAULT_AUTONOMY_THRESHOLD: !Ref CognisAutonomyThreshold
+
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireInvestigationArtifacts
+            Status: Enabled
+            ExpirationInDays: 14
+
+  InvestigationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: investigation_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: investigation_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  ContractsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: contract_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: contract_id
+          KeyType: HASH
+
+  EvidenceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: contract_id
+          AttributeType: S
+        - AttributeName: evidence_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: contract_id
+          KeyType: HASH
+        - AttributeName: evidence_id
+          KeyType: RANGE
+
+  InvestigationTraceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: investigation_id
+          AttributeType: S
+        - AttributeName: step_index
+          AttributeType: N
+      KeySchema:
+        - AttributeName: investigation_id
+          KeyType: HASH
+        - AttributeName: step_index
+          KeyType: RANGE
+
+  AutonomyConfigTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: repo_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: repo_id
+          KeyType: HASH
+
+  DriftLedgerTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: drift_class
+          AttributeType: S
+        - AttributeName: contract_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: drift_class
+          KeyType: HASH
+        - AttributeName: contract_id
+          KeyType: RANGE
+
+  ObserveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      CodeUri: functions/observe/
+      Handler: app.handler
+      Timeout: 120
+      MemorySize: 512
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref ArtifactBucket
+      Environment:
+        Variables:
+          ARTIFACT_BUCKET: !Ref ArtifactBucket
+
+  EngineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures:
+        - arm64
+      Timeout: 900
+      MemorySize: 2048
+      EphemeralStorage:
+        Size: 10240
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ArtifactBucket
+        - S3WritePolicy:
+            BucketName: !Ref ArtifactBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
+      Environment:
+        Variables:
+          ARTIFACT_BUCKET: !Ref ArtifactBucket
+          COGNIS_MODEL_ID: !Ref CognisModelId
+          DEFAULT_AUTONOMY_THRESHOLD: !Ref CognisAutonomyThreshold
+    Metadata:
+      Dockerfile: infra/aws/functions/engine/Dockerfile
+      DockerContext: ../../
+      DockerTag: latest
+
+  PersistFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      CodeUri: functions/persist/
+      Handler: app.handler
+      Timeout: 60
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ArtifactBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvestigationsTable
+      Environment:
+        Variables:
+          INVESTIGATIONS_TABLE: !Ref InvestigationsTable
+
+  StatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      CodeUri: functions/status/
+      Handler: app.handler
+      Timeout: 30
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref InvestigationsTable
+      Environment:
+        Variables:
+          INVESTIGATIONS_TABLE: !Ref InvestigationsTable
+
+  InvestigationStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub cognis-investigation-${AWS::StackName}
+      Type: STANDARD
+      DefinitionUri: statemachine/pipeline.asl.json
+      DefinitionSubstitutions:
+        ObserveFunctionArn: !GetAtt ObserveFunction.Arn
+        EngineFunctionArn: !GetAtt EngineFunction.Arn
+        PersistFunctionArn: !GetAtt PersistFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ObserveFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref EngineFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref PersistFunction
+
+  CognisHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - content-type
+        AllowOrigins:
+          - '*'
+
+  StartInvestigationRoute:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      FunctionName: !Sub cognis-http-ingress-${AWS::StackName}
+      CodeUri: functions/ingress/
+      Handler: app.handler
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - states:StartExecution
+              Resource: !Ref InvestigationStateMachine
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: !Ref InvestigationStateMachine
+          DEFAULT_AUTONOMY_THRESHOLD: !Ref CognisAutonomyThreshold
+      Events:
+        StartInvestigation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CognisHttpApi
+            Path: /v1/investigations
+            Method: POST
+
+  GetInvestigationRoute:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      FunctionName: !Sub cognis-http-status-${AWS::StackName}
+      CodeUri: functions/status/
+      Handler: app.handler
+      Timeout: 30
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref InvestigationsTable
+      Environment:
+        Variables:
+          INVESTIGATIONS_TABLE: !Ref InvestigationsTable
+      Events:
+        GetInvestigation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CognisHttpApi
+            Path: /v1/investigations/{investigation_id}
+            Method: GET
+
+Outputs:
+  ApiUrl:
+    Description: Cognis HTTP API base URL.
+    Value: !Sub https://${CognisHttpApi}.execute-api.${AWS::Region}.amazonaws.com
+
+  InvestigationEndpoint:
+    Description: Start a Cognis investigation.
+    Value: !Sub https://${CognisHttpApi}.execute-api.${AWS::Region}.amazonaws.com/v1/investigations
+
+  StatusEndpointTemplate:
+    Description: Get investigation status/result.
+    Value: !Sub https://${CognisHttpApi}.execute-api.${AWS::Region}.amazonaws.com/v1/investigations/{investigation_id}
+
+  StateMachineArn:
+    Description: Cognis investigation Step Functions state machine.
+    Value: !Ref InvestigationStateMachine
+
+  ArtifactBucketName:
+    Description: S3 bucket holding repository and investigation artifacts.
+    Value: !Ref ArtifactBucket
